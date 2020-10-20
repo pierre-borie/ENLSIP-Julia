@@ -14,6 +14,11 @@
 \usepackage{flafter}  % Don't place floats before their definition
 %\usepackage{topcapt}   % Define \topcation for placing captions above tables (not in gwTeX)
 
+%% Ajouté par Fabian
+\usepackage[round, sort,comma,authoryear]{natbib}
+\usepackage{url}
+
+
 \usepackage{amsmath,amssymb,amsthm}  % Better maths support & more symbols
 \usepackage[french]{babel}
 
@@ -71,17 +76,17 @@
 \title{Implémentation d'ENLSIP en Julia: Rapport Technique}
 \author{Pierre Borie \\ ENAC}
 
-\date{8 Juin 2020 -11 Septembre 2020}
+\date{8 Juin 2020 \mfabian{--} 11 Septembre 2020}
 \maketitle
 
 
 
 	
 \begin{abstract}
-J'ai effectué mon stage d'insertion professionnelle pour HydroQuebec transénergie, plus précisément la division de prévision de la demande, en collaboration avec Mr Fabian Bastin de l'Université de Montréal, qui était mon maître de stage. J'ai travaillé sur la transcription de l'algorithme d'optimisation ENLSIP. Cet algorithme, initialement codé en Fortran77, est utilisé en production afin de prédire la demande en électricité dans une période de 24 heures. Ce rapport illustre les résultats de mes travaux sur la compréhension du fonctionnement de l'algorithme et sur son implémentation en Julia. 
+J'ai effectué mon stage d'insertion professionnelle pour \mfabian{HydroQuébec Transénergie}, plus précisément la division de prévision de la demande, en collaboration avec Mr Fabian Bastin de l'Université de Montréal, qui était mon maître de stage. J'ai travaillé sur la transcription de l'algorithme d'optimisation ENLSIP. Cet algorithme, initialement codé en Fortran77, est utilisé en production afin de prédire la demande en électricité dans une période de 24 heures. Ce rapport illustre les résultats de mes travaux sur la compréhension du fonctionnement de l'algorithme et sur son implémentation en Julia. 
 \end{abstract}
 
-L'ensemble de mes travaux est disponible sur ce \href{https://github.com/pierre-borie/nlcls}{répertoire git}.
+L'ensemble de mes travaux est disponible sur \mfabian{le répertoire git \url{https://github.com/pierre-borie/nlcls}}.\fabian{Je considère préférable de faire apparaître l'url au cas où le lecteur imprime le document.}
 
 \tableofcontents
 
@@ -91,7 +96,7 @@ L'ensemble de mes travaux est disponible sur ce \href{https://github.com/pierre-
 
 Pour la suite, $q,l,m\text{ et }n$ sont des entiers naturels tels que $q \leq l \leq n \leq m$. 
 
-On dispose de $m$ observations réelles  $(t_{i},y_{i})$ et l'on souhaite ajuster un modèle $h$ de paramètre $x\in \mathbb{R}^{n}$ qui approche au mieux nos observations, le tout en satisfaisant $l$ contraintes, dont $q$ sont des contraintes d'égalité. Pour cela, on cherche le paramètre $x^{*}$ qui minimise la somme des écarts entre prédictions et observations au carré, soit:
+On dispose de $m$ observations réelles  $(t_{i},y_{i})$ et l'on souhaite ajuster un modèle $h$ de paramètre\mfabian{s} $x\in \mathbb{R}^{n}$ qui approche au mieux nos observations, le tout en satisfaisant $l$ contraintes, dont $q$ sont des contraintes d'égalité. Pour cela, on cherche le \mfabian{vecteur de} paramètre\mfabian{s} $x^{*}$ qui minimise la somme des écarts entre prédictions et observations au carré, soit:
 \[
 \underset{x \in \mathbb{R}^{n}}{\min} \sum_{i=1}^{m} \left(h(t_{i},x)-y_{i})\right)^{2}
 \]
@@ -105,9 +110,8 @@ c_{i}(x) = 0& i=1,\ldots,q
 \\ c_{j}(x) \geq 0& j=q+1,\ldots,l  \end{matrix} \right. 
 \end{equation}
 
-On a $r =(r_{1}, \ldots,r_{m})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{m}$ la multi-fonction vectorielle des résidus et $c = (c_{1}, \ldots, c_{l})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{l}$ multi-fonction des contraintes dont les $q$ premières composantes sont des contraintes d'égalité et les $l-q$ suivantes sont des contraintes d'inégalité. On suppose les $r_{i}$ et $c_{j}$ deux fois continûment différentiables.  
-
-$f:x\mapsto \dfrac{1}{2}\|r(x)\|^{2}$ est la fonction objectif à minimiser.
+On a $r =(r_{1}, \ldots,r_{m})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{m}$ la multi-fonction vectorielle\fabian{répétition: une multi-fonction est une fonction vectorielle} des résidus et $c = (c_{1}, \ldots, c_{l})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{l}$ \mfabian{la} multi-fonction des contraintes dont les $q$ premières composantes sont des contraintes d'égalité et les $l-q$ suivantes sont des contraintes d'inégalité. On suppose les $r_{i}$ et $c_{j}$ deux fois continûment différentiables.  
+\mfabian{Finalement, } $f:x\mapsto \dfrac{1}{2}\|r(x)\|^{2}$ est la fonction objectif à minimiser.
 
 \subsection{Idée générale de la résolution}
 
@@ -122,7 +126,7 @@ On met à jour le point courant par $x_{k+1} = x_{k}+\alpha_{k}p_{k}$.
 On décrit ci-dessous, en pseudo-code, le déroulement général de l'algorithme. Les différents termes seront précisés au fur et à mesure. Les noms de fonctions sont ceux utilisés dans les notebooks du répertoire git.
 \newpage
 \begin{algorithmic}
-\REQUIRE{$x_{0}$ point de départ, $r$ et $c$ multi-fonctions des contraintes et leurs jacobiennes respectives $J$ et $A$}
+\REQUIRE{$x_{0}$ point de départ, $r$ et $c$ multi-fonctions des contraintes et leurs \mfabian{matrices} jacobiennes respectives $J$ et $A$}
 \STATE{\textbf{begin}}
 \STATE{init\_working\_set() \{Initialisation du premier ensemble de travail\}}
 \STATE{$k=0$}
@@ -155,39 +159,35 @@ On décrit ci-dessous, en pseudo-code, le déroulement général de l'algorithme
 
 
 
-\subsection{Méthode de Gauss-Newton}\footnote{Fonction SUBDIR du fichier dblreduns.f} \pierre{Pour les références aux fonctions Fortran, est-ce mieux de les faire en début de partie ou en note de bas de page comme ci-dessus ?}\label{method:gn}
+\subsection{Méthode de Gauss-Newton}\footnote{Fonction SUBDIR du fichier dblreduns.f} \pierre{Pour les références aux fonctions Fortran, est-ce mieux de les faire en début de partie ou en note de bas de page comme ci-dessus ?}\fabian{Personnellement, je préfère les références dans le texte plutôt qu'en notes de bas de page.}\label{method:gn}
 
 Les calculs effectués ci-dessous correspondent à ce qui est fait par la fonction SUBDIR du fichier dblreduns.f
 \subsubsection{Modélisation du sous-problème} \label{gn:model}
 
-Les explications ci-dessous se basent sur celles fournies dans \cite{lindstromwedin1988}.
+Les explications ci-dessous se basent sur celles fournies \mfabian{par} \citet{lindstromwedin1988}.
 
-Soit $\tilde{x}$ une approximation de la solution du problème \ref{pb}. Dans un voisinage $\delta x$, à partir du développement de Taylor d'ordre 1, on a, pour $i=1,\ldots,m$, l'approximation suivante du $i$-ème résidu:
-
+Soit $\tilde{x}$ une approximation de la solution du problème \mfabian{\eqref{pb}}\fabian{Utilise eqref pour référencer les équations.}. Dans un voisinage $\delta x$\fabian{$\delta x$ est pris ici dans un voisinage, mais n'est pas lui-même un voisinage.}, à partir du développement de Taylor d'ordre 1, on a, pour $i=1,\ldots,m$, l'approximation suivante du $i$-ème résidu:\fabian{Suis-tu la notation de 
+\citet{lindstromwedin1988}? Ce qui me gêne est que la notation correspond à des vecteurs lignes alors qu'il est plus standard d'avoir des vecteurs colonnes.}
 \begin{equation}
 r_{i}(\tilde{x} + \delta x) \approx r_{i}(\tilde{x}) + \left(\dfrac{\partial r_{i}(\tilde{x})}{\partial x_{1}}, \ldots, \dfrac{\partial r_{i}(\tilde{x})}{\partial x_{n}}\right)\delta x 
 \end{equation}
-
 De même pour la $j$-ième contrainte, $j=1,\ldots,l$: 
-
 \begin{equation}
 c_{j}(\tilde{x} + \delta x) \approx c_{j}(\tilde{x}) + \left(\dfrac{\partial c_{j}(\tilde{x})}{\partial x_{1}}, \ldots, \dfrac{\partial c_{j}(\tilde{x})}{\partial x_{n}}\right)\delta x 
 \end{equation}
 
-Ce qui, en notant $J$ et $A$ les matrices jacobiennes respectives des multi-fonctions $r$ et $c$, donne les linéarisations:
+Ce qui, en notant $J$ et $A$ les matrices jacobiennes respectives des multi-fonctions $r$ et $c$, donne les linéarisations:\fabian{Les deux équations qui suivent, elles, supposent de travailler avec des vecteurs colonnes.}
 \begin{eqnarray} 
 r(\tilde{x}+\delta x) &=& J(\tilde{x})\delta x + r(\tilde{x}) \label{linearisationr}\\
 c(\tilde{x}+\delta x) &=& A(\tilde{x})\delta x + c(\tilde{x}) \label{linearisationc}
 \end{eqnarray}
-
-Ces linéarisations seront injectées dans la formulation du problème \ref{pb} mais avant, nous allons nous intéresser à la considération des contraintes.
+Ces linéarisations seront injectées dans la formulation du problème \eqref{pb} mais avant, nous allons nous intéresser \mfabian{au caractère} des contraintes.
 
 On souhaite pouvoir distinguer les contraintes actives des contraintes inactives. Les contraintes d'égalité étant par définition actives, le problème se pose pour les contraintes d'inégalité. 
 
-Bien que l'article \cite{lindstromwedin1988} ne mentionne pas précisément les hypothèses de qualification des contraintes, il m'a semblé implicite qu'une contrainte d'inégalité était considérée comme active si elle égale à $0$ et inactive si elle est strictement positive. La méthode implémentée dans ENLSIP est une méthode d'ensemble actif. Le principe est de ne prendre en compte que des contraintes actives pour les calculs de direction de descente et de pas à une itération donnée. Les contraintes d'inégalité actives peuvent être considérées comme des contraintes d'égalité. Cela permet de ramener le problème initial à un problème sous contraintes d'égalités. On pourrait penser qu'il suffit de prendre les inégalités qui sont égales à $0$ et de mettre de côté les autres. Or ce n'est pas ce qui est fait dans l'algorithme. L'idée est de travailler avec un ensemble de contraintes $\mathcal{W}$ appelé ensemble de travail (working set en anglais) mis à jour à chaque début et fin d'itération. $\mathcal{W}$ comprend toujours toutes les contraintes d'égalité.
-
-En début d'itération, $\mathcal{W}$ contient également les contraintes d'inégalité actives au point courant. Sa mise à jour consiste à lui retirer au plus une contrainte. Une fois les directions de descente et pas calculés, on ajoute à $\mathcal{W}$ les contraintes d'inégalité devenues actives au nouveau point courant. 
-\pierre{Je pense finalement avoir compris la même chose. La contrainte que l'on retire de l'ensemble de travail est celle qui va devenir le "plus inactive" tandis que les autres vont le rester}
+Bien que \mfabian{\cite{lindstromwedin1988} ne mentionnent} pas précisément les hypothèses de qualification des contraintes, il m'a semblé implicite qu'une contrainte d'inégalité était considérée comme active si elle égale à $0$ et inactive si elle est strictement positive.\fabian{Il y a un peu confusion ici. La définition de contrainte active que tu donnes ici est correcte, mais les hypothèses de qualification de contraintes, comme la LICQ, servent elles à permettent d'utiliser les conditions KKT comme conditions nécessaires. L'autre point à considérer est qu'une contrainte d'inégalité active deviendra inactive si la direction de plus forte pente est réalisable.} La méthode implémentée dans ENLSIP est une méthode d'ensemble actif. Le principe est de ne prendre en compte que des contraintes actives pour les calculs de direction de descente et de pas à une itération donnée. Les contraintes d'inégalité actives peuvent être considérées comme des contraintes d'égalité. Cela permet de ramener le problème initial à un problème sous contraintes d'égalités. On pourrait penser qu'il suffit de prendre les inégalités qui sont égales à $0$ et de mettre de côté les autres. Or ce n'est pas ce qui est fait dans l'algorithme. L'idée est de travailler avec un ensemble de contraintes $\mathcal{W}$ appelé ensemble de travail (working set en anglais) mis à jour à chaque début et fin d'itération. $\mathcal{W}$ comprend toujours toutes les contraintes d'égalité.\fabian{Je crois de plus en plus que l'ensemble de travail considère les contraintes qui vont rester actives le long de la direction de recherche -- du moins leur linéarisation -- mais pas les autres; cf note précédente.}
+En début d'itération, $\mathcal{W}$ contient également les contraintes d'inégalité actives au point courant\fabian{Toutes les contraintes d'inégalité actives ou seulement celles qui le resteront?}. Sa mise à jour consiste à lui retirer au plus une contrainte. Une fois les directions de descente et pas calculés, on ajoute à $\mathcal{W}$ les contraintes d'inégalité devenues actives au nouveau point courant. 
+\pierre{Je pense finalement avoir compris la même chose. La contrainte que l'on retire de l'ensemble de travail est celle qui va devenir le "plus inactive" tandis que les autres vont le rester.}\fabian{À indiquer dans le texte alors.}
 
 
 Les détails quant à la détermination de l'ensemble $\mathcal{W}$ se trouvent dans la section \ref{working-set}. Le lagrangien du problème s'écrit comme: 
@@ -205,21 +205,18 @@ Parmi ces $t$ contraintes, on retrouve:
 \item
 toutes les contraintes d'égalité
 \item
-les contraintes d'inégalité actives considérées comme des contraintes d'égalité. 
+les contraintes d'inégalité actives\fabian{Il faudrait peut-être trouver un autre terme ici.} considérées comme des contraintes d'égalité. 
 \end{itemize}
+On note $\hc$ la restriction de $c$ à $t$ composantes et $\ha$ sa matrice jacobienne. La linéarisation \eqref{linearisationc} de $c$ reste valable pour $\hc$.
 
-On note $\hc$ la restriction de $c$ à $t$ composantes et $\ha$ sa matrice jacobienne. La linéarisation \ref{linearisationc} de $c$ reste valable pour $\hc$.
-
-A l'itération $k$,  le point courant $x_{k}$, les vecteurs $r(x_{k})$ et $\hc(x_{k})$ ainsi que les matrices $J_{k}=J(x_{k}) \text{ et } \ha_{k}=\ha(x_{k})$ sont fixés. On cherche alors la direction de descente $p_{k}$ qui nous rapproche au mieux du minimum de la fonction objectif. En injectant les linéarisations de $r$ et $\hc$, on obtient le sous-problème suivant:
-
+À l'itération $k$,  le point courant $x_{k}$, les vecteurs $r(x_{k})$ et $\hc(x_{k})$ ainsi que les matrices $J_{k}=J(x_{k}) \text{ et } \ha_{k}=\ha(x_{k})$ sont fixés. On cherche alors la direction de descente $p_{k}$ qui nous rapproche au mieux du minimum de la fonction objectif\fabian{Pas tout à fait; il faut au moins parler du minimum contraint. Mieux: on cherche à résoudre le système KKT.}. En injectant les linéarisations de $r$ et $\hc$, on obtient le sous-problème suivant:\fabian{Utilise l'environnement align, pas array.}
 \begin{equation} \label{souspb}
-\left\{ \begin{array}{l l l}
-\underset{p \in \real^{n}}{\min} \dfrac{1}{2}\|J_{k}p+r(x_{k})\|^{2} \\
-\text{s.c.} \\
-\ha_{k}p+\hc(x_{k})=0
-\end{array} \right.
+\begin{aligned}
+	\underset{p \in \real^{n}}{\min}\ & \dfrac{1}{2}\|J_{k}p+r(x_{k})\|^{2} \\
+	\text{s.c.}\ & 	\ha_{k}p+\hc(x_{k})=0
+\end{aligned}
 \end{equation}
-C'est-à-dire un problème de moindres carrés linéaires sous contraintes d'égalité linéaires.
+Il s'agit d'un problème de moindres carrés linéaires sous contraintes d'égalité linéaires.
 
 \subsubsection{Factorisation QR} \label{factqr}
 
@@ -905,8 +902,8 @@ Ce résultat, comme le montre l'illustration graphique ci-dessous, est bien plus
 \caption{Illustration graphique}
 \end{figure}
 
-
-\bibliographystyle{plain}
+%\bibliographystyle{plain}
+\bibliographystyle{plainnat}
 \bibliography{biblio_rapport}
 
 \end{document}

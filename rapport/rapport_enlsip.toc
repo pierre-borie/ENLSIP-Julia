@@ -1,38 +1,38 @@
 \babel@toc {french}{}
-\contentsline {section}{\numberline {1}Introduction}{2}{section.1}%
-\contentsline {subsection}{\numberline {1.1}Présentation du problème à résoudre}{2}{subsection.1.1}%
-\contentsline {subsection}{\numberline {1.2}Idée générale de la résolution}{3}{subsection.1.2}%
-\contentsline {section}{\numberline {2}Calcul de la direction de descente}{4}{section.2}%
-\contentsline {subsection}{\numberline {2.1}Méthode de Gauss-Newton}{4}{subsection.2.1}%
-\contentsline {subsubsection}{\numberline {2.1.1}Modélisation du sous-problème}{4}{subsubsection.2.1.1}%
-\contentsline {subsubsection}{\numberline {2.1.2}Factorisation QR}{5}{subsubsection.2.1.2}%
-\contentsline {subsubsection}{\numberline {2.1.3}Décomposition en sous-systèmes}{6}{subsubsection.2.1.3}%
-\contentsline {subsubsection}{\numberline {2.1.4}Résolution avec stabilisation}{8}{subsubsection.2.1.4}%
-\contentsline {subsubsection}{\numberline {2.1.5}Résolution sans stabilisation}{9}{subsubsection.2.1.5}%
-\contentsline {subsubsection}{\numberline {2.1.6}Solution du sous-problème}{9}{subsubsection.2.1.6}%
-\contentsline {subsection}{\numberline {2.2}Méthode de Gauss-Newton avec rang plein}{10}{subsection.2.2}%
-\contentsline {subsection}{\numberline {2.3}Méthode de Gauss-Newton avec minimisation de sous-espace}{10}{subsection.2.3}%
-\contentsline {subsubsection}{\numberline {2.3.1}Principe général}{10}{subsubsection.2.3.1}%
-\contentsline {subsubsection}{\numberline {2.3.2}Calcul de la dimension}{10}{subsubsection.2.3.2}%
-\contentsline {subsubsection}{\numberline {2.3.3}Commentaires sur la méthode}{11}{subsubsection.2.3.3}%
-\contentsline {subsection}{\numberline {2.4}Méthode de Newton}{12}{subsection.2.4}%
-\contentsline {subsubsection}{\numberline {2.4.1}Problème à résoudre}{12}{subsubsection.2.4.1}%
-\contentsline {subsubsection}{\numberline {2.4.2}Calcul de la direction de Newton}{13}{subsubsection.2.4.2}%
-\contentsline {section}{\numberline {3}Mise à jour de l'espace de travail}{14}{section.3}%
-\contentsline {subsection}{\numberline {3.1}Mise en situation}{14}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Critère de suppression d'une contrainte}{15}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Calcul des multiplicateurs de Lagrange}{15}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Commentaires}{16}{subsection.3.4}%
-\contentsline {section}{\numberline {4}Calcul du pas}{17}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Principe général}{17}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Calcul des pénalités}{17}{subsection.4.2}%
-\contentsline {subsubsection}{\numberline {4.2.1}Problème d'optimisation à résoudre}{18}{subsubsection.4.2.1}%
-\contentsline {subsubsection}{\numberline {4.2.2}Résolution}{19}{subsubsection.4.2.2}%
-\contentsline {subsection}{\numberline {4.3}Calcul de la longueur de pas}{19}{subsection.4.3}%
-\contentsline {subsection}{\numberline {4.4}Commentaires sur le calcul du pas}{20}{subsection.4.4}%
-\contentsline {section}{\numberline {5}Terminaison de l'algorithme}{21}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Critères de convergence}{21}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}Critères d'arrêt anormaux}{21}{subsection.5.2}%
-\contentsline {section}{\numberline {6}Résultats}{21}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Premier exemple}{22}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Second exemple}{24}{subsection.6.2}%
+\contentsline {section}{\numberline {1}Introduction}{2}{section.1}% 
+\contentsline {subsection}{\numberline {1.1}Pr\IeC {\'e}sentation du probl\IeC {\`e}me \IeC {\`a} r\IeC {\'e}soudre}{2}{subsection.1.1}% 
+\contentsline {subsection}{\numberline {1.2}Id\IeC {\'e}e g\IeC {\'e}n\IeC {\'e}rale de la r\IeC {\'e}solution}{3}{subsection.1.2}% 
+\contentsline {section}{\numberline {2}Calcul de la direction de descente}{5}{section.2}% 
+\contentsline {subsection}{\numberline {2.1}M\IeC {\'e}thode de Gauss-Newton}{5}{subsection.2.1}% 
+\contentsline {subsubsection}{\numberline {2.1.1}Mod\IeC {\'e}lisation du sous-probl\IeC {\`e}me}{5}{subsubsection.2.1.1}% 
+\contentsline {subsubsection}{\numberline {2.1.2}Factorisation QR}{7}{subsubsection.2.1.2}% 
+\contentsline {subsubsection}{\numberline {2.1.3}D\IeC {\'e}composition en sous-syst\IeC {\`e}mes}{8}{subsubsection.2.1.3}% 
+\contentsline {subsubsection}{\numberline {2.1.4}R\IeC {\'e}solution avec stabilisation}{9}{subsubsection.2.1.4}% 
+\contentsline {subsubsection}{\numberline {2.1.5}R\IeC {\'e}solution sans stabilisation}{11}{subsubsection.2.1.5}% 
+\contentsline {subsubsection}{\numberline {2.1.6}Solution du sous-probl\IeC {\`e}me}{11}{subsubsection.2.1.6}% 
+\contentsline {subsection}{\numberline {2.2}M\IeC {\'e}thode de Gauss-Newton avec rang plein}{11}{subsection.2.2}% 
+\contentsline {subsection}{\numberline {2.3}M\IeC {\'e}thode de Gauss-Newton avec minimisation de sous-espace}{12}{subsection.2.3}% 
+\contentsline {subsubsection}{\numberline {2.3.1}Principe g\IeC {\'e}n\IeC {\'e}ral}{12}{subsubsection.2.3.1}% 
+\contentsline {subsubsection}{\numberline {2.3.2}Calcul de la dimension}{12}{subsubsection.2.3.2}% 
+\contentsline {subsubsection}{\numberline {2.3.3}Commentaires sur la m\IeC {\'e}thode}{13}{subsubsection.2.3.3}% 
+\contentsline {subsection}{\numberline {2.4}M\IeC {\'e}thode de Newton}{14}{subsection.2.4}% 
+\contentsline {subsubsection}{\numberline {2.4.1}Probl\IeC {\`e}me \IeC {\`a} r\IeC {\'e}soudre}{14}{subsubsection.2.4.1}% 
+\contentsline {subsubsection}{\numberline {2.4.2}Calcul de la direction de Newton}{14}{subsubsection.2.4.2}% 
+\contentsline {section}{\numberline {3}Mise \IeC {\`a} jour de l'espace de travail}{16}{section.3}% 
+\contentsline {subsection}{\numberline {3.1}Mise en situation}{16}{subsection.3.1}% 
+\contentsline {subsection}{\numberline {3.2}Crit\IeC {\`e}re de suppression d'une contrainte}{17}{subsection.3.2}% 
+\contentsline {subsection}{\numberline {3.3}Calcul des multiplicateurs de Lagrange}{17}{subsection.3.3}% 
+\contentsline {subsection}{\numberline {3.4}Commentaires}{18}{subsection.3.4}% 
+\contentsline {section}{\numberline {4}Calcul du pas}{19}{section.4}% 
+\contentsline {subsection}{\numberline {4.1}Principe g\IeC {\'e}n\IeC {\'e}ral}{19}{subsection.4.1}% 
+\contentsline {subsection}{\numberline {4.2}Calcul des p\IeC {\'e}nalit\IeC {\'e}s}{19}{subsection.4.2}% 
+\contentsline {subsubsection}{\numberline {4.2.1}Probl\IeC {\`e}me d'optimisation \IeC {\`a} r\IeC {\'e}soudre}{20}{subsubsection.4.2.1}% 
+\contentsline {subsubsection}{\numberline {4.2.2}R\IeC {\'e}solution}{21}{subsubsection.4.2.2}% 
+\contentsline {subsection}{\numberline {4.3}Calcul de la longueur de pas}{21}{subsection.4.3}% 
+\contentsline {subsection}{\numberline {4.4}Commentaires sur le calcul du pas}{22}{subsection.4.4}% 
+\contentsline {section}{\numberline {5}Terminaison de l'algorithme}{23}{section.5}% 
+\contentsline {subsection}{\numberline {5.1}Crit\IeC {\`e}res de convergence}{23}{subsection.5.1}% 
+\contentsline {subsection}{\numberline {5.2}Crit\IeC {\`e}res d'arr\IeC {\^e}t anormaux}{23}{subsection.5.2}% 
+\contentsline {section}{\numberline {6}R\IeC {\'e}sultats}{24}{section.6}% 
+\contentsline {subsection}{\numberline {6.1}Premier exemple}{24}{subsection.6.1}% 
+\contentsline {subsection}{\numberline {6.2}Second exemple}{26}{subsection.6.2}% 
