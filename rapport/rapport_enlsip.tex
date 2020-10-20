@@ -220,12 +220,11 @@ Il s'agit d'un problème de moindres carrés linéaires sous contraintes d'égal
 
 \subsubsection{Factorisation QR} \label{factqr}
 
-Le c\oe ur de la résolution du problème \ref{souspb} réside dans la factorisation QR de différentes matrices.  On rappelle ci-dessous la factorisation QR d'une matrice disposant de plus de lignes que de colonnes.
+Le c\oe{}ur de la résolution du problème \eqref{souspb} réside dans la factorisation QR de différentes matrices.  On rappelle ci-dessous la factorisation QR d'une matrice disposant de plus de lignes que de colonnes.
 
 \newtheorem*{theo}{Théorème}
 \begin{theo}[Factorisation QR]
 Soit $M \in \mathcal{M}_{m\times n}$ avec $m$ et $n$ des entiers quelconques tel que $m\geq n$.
-
 Alors il existe $Q\text{ une matrice orthogonale } m\times m$, $ R \text{ de taille }n \times n$ une matrice triangulaire supérieure et $P \text{ une matrice de permutation } n\times n$ tel que:
 \[
 MP = Q 
@@ -261,7 +260,7 @@ $P_{a} \text{ matrice de permutation } n\times n$
 
 \textbf{\underline{N.B.}}: Les matrices issues de la décomposition QR ci-dessus ne sont pas indexées par $k$ par soucis de lisibilité mais sont bien dépendantes de l'itération en cours. Il en va de même pour les différentes factorisations QR présentées dans la suite de ce document.
 
-Par transposition et par le fait que $P_{a}P_{a}^{T} = I_{t}$, on obtient:
+Par transposition et par le fait que $P_{a}P_{a}^{T} = I_{t}$\fabian{Plus simplementation, une matrice de permutation est elle-même orthogonale, et la transposée d'une matrice orthogonale est égale à son inverse.}, on obtient:
 \begin{equation}
 \ha_{k} = P_{a}
 \begin{pmatrix}
@@ -269,24 +268,21 @@ L_{a} & 0
 \end{pmatrix}
 Q_{a}^{T}
 \end{equation}
-
 où $L_{a}=R_{a}^{T}$ est une matrice triangulaire inférieure $t \times t$.
-
-Injectons cette factorisation l'équation des contraintes du problème \ref{souspb}: 
+\mfabian{Injectant cette factorisation dans \eqref{souspb}, nous obtenons :}%l'équation des contraintes du problème \ref{souspb}: 
 \[
-\ha_{k}p = -c(x_{k}) \Longleftrightarrow P_{a}\begin{pmatrix}
+%\ha_{k}p = -c(x_{k}) \Longleftrightarrow
+P_{a}\begin{pmatrix}
 L_{a} & 0
 \end{pmatrix}
 Q_{a}^{T}p = -c(x_{k})
 \]
-
 Posant $Q_{a}^{T}p = \begin{pmatrix}
 p_{1} \\ p_{2}
 \end{pmatrix}$ avec $p_{1} \in \real^{t}$ et $p_{2} \in \real^{n-t}$ , on a:
 \[
 P_{a}L_{a}p_{1} = -\hc(x_{k}) \Longleftrightarrow L_{a}P_{a} = -P_{a}^{T}\hc(x_{k}) = b
 \]
-
 On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. Cela se comprend en introduisant l'espace nul de $\ha_{k}$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières;  on a $\ha_{k}Z=0$ d'où:
 
 $$
