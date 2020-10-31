@@ -13,12 +13,8 @@
 %\usepackage{epstopdf} % to include .eps graphics files with pdfLaTeX
 \usepackage{flafter}  % Don't place floats before their definition
 %\usepackage{topcapt}   % Define \topcation for placing captions above tables (not in gwTeX)
-
-%% Ajouté par Fabian
 \usepackage[round, sort,comma,authoryear]{natbib}
 \usepackage{url}
-
-
 \usepackage{amsmath,amssymb,amsthm}  % Better maths support & more symbols
 \usepackage[french]{babel}
 
@@ -76,17 +72,17 @@
 \title{Implémentation d'ENLSIP en Julia: Rapport Technique}
 \author{Pierre Borie \\ ENAC}
 
-\date{8 Juin 2020 \mfabian{--} 11 Septembre 2020}
+\date{8 Juin 2020 -11 Septembre 2020}
 \maketitle
 
 
 
 	
 \begin{abstract}
-J'ai effectué mon stage d'insertion professionnelle pour \mfabian{HydroQuébec Transénergie}, plus précisément la division de prévision de la demande, en collaboration avec Mr Fabian Bastin de l'Université de Montréal, qui était mon maître de stage. J'ai travaillé sur la transcription de l'algorithme d'optimisation ENLSIP. Cet algorithme, initialement codé en Fortran77, est utilisé en production afin de prédire la demande en électricité dans une période de 24 heures. Ce rapport illustre les résultats de mes travaux sur la compréhension du fonctionnement de l'algorithme et sur son implémentation en Julia. 
+J'ai effectué mon stage d'insertion professionnelle pour HydroQuebec Transénergie, plus précisément la division de prévision de la demande, en collaboration avec Mr Fabian Bastin de l'Université de Montréal, qui était mon maître de stage. J'ai travaillé sur la transcription de l'algorithme d'optimisation ENLSIP. Cet algorithme, initialement codé en Fortran77, est utilisé en production afin de prédire la demande en électricité dans une période de 24 heures. Ce rapport illustre les résultats de mes travaux sur la compréhension du fonctionnement de l'algorithme et sur son implémentation en Julia. 
 \end{abstract}
 
-L'ensemble de mes travaux est disponible sur \mfabian{le répertoire git \url{https://github.com/pierre-borie/nlcls}}.\fabian{Je considère préférable de faire apparaître l'url au cas où le lecteur imprime le document.}
+L'ensemble de mes travaux est disponible sur le répertoire git \url{https://github.com/pierre-borie/nlcls}.
 
 \tableofcontents
 
@@ -96,7 +92,7 @@ L'ensemble de mes travaux est disponible sur \mfabian{le répertoire git \url{ht
 
 Pour la suite, $q,l,m\text{ et }n$ sont des entiers naturels tels que $q \leq l \leq n \leq m$. 
 
-On dispose de $m$ observations réelles  $(t_{i},y_{i})$ et l'on souhaite ajuster un modèle $h$ de paramètre\mfabian{s} $x\in \mathbb{R}^{n}$ qui approche au mieux nos observations, le tout en satisfaisant $l$ contraintes, dont $q$ sont des contraintes d'égalité. Pour cela, on cherche le \mfabian{vecteur de} paramètre\mfabian{s} $x^{*}$ qui minimise la somme des écarts entre prédictions et observations au carré, soit:
+On dispose de $m$ observations réelles  $(t_{i},y_{i})$ et l'on souhaite ajuster un modèle $h$ de paramètre $x\in \mathbb{R}^{n}$ qui approche au mieux nos observations, le tout en satisfaisant $l$ contraintes, dont $q$ sont des contraintes d'égalité. Pour cela, on cherche le paramètre $x^{*}$ qui minimise la somme des écarts entre prédictions et observations au carré, soit:
 \[
 \underset{x \in \mathbb{R}^{n}}{\min} \sum_{i=1}^{m} \left(h(t_{i},x)-y_{i})\right)^{2}
 \]
@@ -104,14 +100,14 @@ Pour $i=1,\ldots,m$, $r_{i}: x \to y_{i} - h(t_{i},x)$ est le $i$-ème résidu.
 L'algorithme sur lequel j'ai travaillé a pour finalité la résolution d'un problème d'optimisation de la forme: 
 
 \begin{equation} \label{pb}
-\left\{ \begin{matrix} \underset{x \in \mathbb{R}^n}{\min}  \dfrac{1}{2}\|r(x)\|^2 \\ 
+\left\{ \begin{aligned} \underset{x \in \mathbb{R}^n}{\min}  \dfrac{1}{2}\|r(x)\|^2 \\ 
 \textnormal{sous contraintes} \\
-c_{i}(x) = 0& i=1,\ldots,q 
-\\ c_{j}(x) \geq 0& j=q+1,\ldots,l  \end{matrix} \right. 
+c_{i}(x) = 0& i=1,\ldots,q \\
+c_{j}(x) \geq 0& j=q+1,\ldots,l  
+\end{aligned} \right. 
 \end{equation}
 
-On a $r =(r_{1}, \ldots,r_{m})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{m}$ la multi-fonction vectorielle\fabian{répétition: une multi-fonction est une fonction vectorielle} des résidus et $c = (c_{1}, \ldots, c_{l})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{l}$ \mfabian{la} multi-fonction des contraintes dont les $q$ premières composantes sont des contraintes d'égalité et les $l-q$ suivantes sont des contraintes d'inégalité. On suppose les $r_{i}$ et $c_{j}$ deux fois continûment différentiables.  
-\mfabian{Finalement, } $f:x\mapsto \dfrac{1}{2}\|r(x)\|^{2}$ est la fonction objectif à minimiser.
+On a $r =(r_{1}, \ldots,r_{m})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{m}$ la multi-fonction des résidus et $c = (c_{1}, \ldots, c_{l})^{T}: \mathbb{R}^{n} \mapsto \mathbb{R}^{l}$ la multi-fonction des contraintes dont les $q$ premières composantes sont des contraintes d'égalité et les $l-q$ suivantes sont des contraintes d'inégalité. On suppose les $r_{i}$ et $c_{j}$ deux fois continûment différentiables. Finalement, $f:x\mapsto \dfrac{1}{2}\|r(x)\|^{2}$ est la fonction objectif à minimiser.
 
 \subsection{Idée générale de la résolution}
 
@@ -126,7 +122,7 @@ On met à jour le point courant par $x_{k+1} = x_{k}+\alpha_{k}p_{k}$.
 On décrit ci-dessous, en pseudo-code, le déroulement général de l'algorithme. Les différents termes seront précisés au fur et à mesure. Les noms de fonctions sont ceux utilisés dans les notebooks du répertoire git.
 \newpage
 \begin{algorithmic}
-\REQUIRE{$x_{0}$ point de départ, $r$ et $c$ multi-fonctions des contraintes et leurs \mfabian{matrices} jacobiennes respectives $J$ et $A$}
+\REQUIRE{$x_{0}$ point de départ, $r$ et $c$ multi-fonctions des contraintes et leurs matrices jacobiennes respectives $J$ et $A$}
 \STATE{\textbf{begin}}
 \STATE{init\_working\_set() \{Initialisation du premier ensemble de travail\}}
 \STATE{$k=0$}
@@ -159,35 +155,53 @@ On décrit ci-dessous, en pseudo-code, le déroulement général de l'algorithme
 
 
 
-\subsection{Méthode de Gauss-Newton}\footnote{Fonction SUBDIR du fichier dblreduns.f} \pierre{Pour les références aux fonctions Fortran, est-ce mieux de les faire en début de partie ou en note de bas de page comme ci-dessus ?}\fabian{Personnellement, je préfère les références dans le texte plutôt qu'en notes de bas de page.}\label{method:gn}
+\subsection{Méthode de Gauss-Newton}\label{method:gn}
 
 Les calculs effectués ci-dessous correspondent à ce qui est fait par la fonction SUBDIR du fichier dblreduns.f
 \subsubsection{Modélisation du sous-problème} \label{gn:model}
 
-Les explications ci-dessous se basent sur celles fournies \mfabian{par} \citet{lindstromwedin1988}.
+Les explications ci-dessous se basent sur celles fournies par \cite{lindstromwedin1988}.
 
-Soit $\tilde{x}$ une approximation de la solution du problème \mfabian{\eqref{pb}}\fabian{Utilise eqref pour référencer les équations.}. Dans un voisinage $\delta x$\fabian{$\delta x$ est pris ici dans un voisinage, mais n'est pas lui-même un voisinage.}, à partir du développement de Taylor d'ordre 1, on a, pour $i=1,\ldots,m$, l'approximation suivante du $i$-ème résidu:\fabian{Suis-tu la notation de 
-\citet{lindstromwedin1988}? Ce qui me gêne est que la notation correspond à des vecteurs lignes alors qu'il est plus standard d'avoir des vecteurs colonnes.}
+Soit $\tilde{x}$ une approximation de la solution du problème \ref{pb} et $\delta x \in \real^{n}$ pris dans un voisinage de $x$. \`A partir du développement de Taylor d'ordre 1, on a pour $i=1,\ldots,m$ l'approximation suivante du $i$-ème résidu:
+
 \begin{equation}
-r_{i}(\tilde{x} + \delta x) \approx r_{i}(\tilde{x}) + \left(\dfrac{\partial r_{i}(\tilde{x})}{\partial x_{1}}, \ldots, \dfrac{\partial r_{i}(\tilde{x})}{\partial x_{n}}\right)\delta x 
+r_{i}(\tilde{x} + \delta x) \approx r_{i}(\tilde{x}) + \left(\dfrac{\partial r_{i}(\tilde{x})}{\partial x_{1}}, \ldots, \dfrac{\partial r_{i}(\tilde{x})}{\partial x_{n}}\right)\delta x
 \end{equation}
+
 De même pour la $j$-ième contrainte, $j=1,\ldots,l$: 
-\begin{equation}
-c_{j}(\tilde{x} + \delta x) \approx c_{j}(\tilde{x}) + \left(\dfrac{\partial c_{j}(\tilde{x})}{\partial x_{1}}, \ldots, \dfrac{\partial c_{j}(\tilde{x})}{\partial x_{n}}\right)\delta x 
-\end{equation}
 
-Ce qui, en notant $J$ et $A$ les matrices jacobiennes respectives des multi-fonctions $r$ et $c$, donne les linéarisations:\fabian{Les deux équations qui suivent, elles, supposent de travailler avec des vecteurs colonnes.}
-\begin{eqnarray} 
-r(\tilde{x}+\delta x) &=& J(\tilde{x})\delta x + r(\tilde{x}) \label{linearisationr}\\
-c(\tilde{x}+\delta x) &=& A(\tilde{x})\delta x + c(\tilde{x}) \label{linearisationc}
-\end{eqnarray}
-Ces linéarisations seront injectées dans la formulation du problème \eqref{pb} mais avant, nous allons nous intéresser \mfabian{au caractère} des contraintes.
+\begin{equation}
+c_{j}(\tilde{x} + \delta x) \approx c_{j}(\tilde{x}) + \left(\dfrac{\partial c_{j}(\tilde{x})}{\partial x_{1}}, \ldots, \dfrac{\partial c_{j}(\tilde{x})}{\partial x_{n}}\right)\delta x
+\end{equation}
+\pierre{J'ai repris exactement les mêmes notations que celles de Lindstrom et Wedin (1988) pour les linéarisations}
+
+Ce qui, en notant $J$ et $A$ les matrices jacobiennes respectives des multi-fonctions $r$ et $c$, donne les linéarisations:
+\begin{align} 
+r(\tilde{x}+\delta x) &= J(\tilde{x})\delta x + r(\tilde{x}) \label{linearisationr}\\
+c(\tilde{x}+\delta x) &= A(\tilde{x})\delta x + c(\tilde{x}) \label{linearisationc}
+\end{align}
+
+Ces linéarisations seront injectées dans la formulation du problème \eqref{pb} mais avant, nous allons nous intéresser au caractère des contraintes.
 
 On souhaite pouvoir distinguer les contraintes actives des contraintes inactives. Les contraintes d'égalité étant par définition actives, le problème se pose pour les contraintes d'inégalité. 
 
-Bien que \mfabian{\cite{lindstromwedin1988} ne mentionnent} pas précisément les hypothèses de qualification des contraintes, il m'a semblé implicite qu'une contrainte d'inégalité était considérée comme active si elle égale à $0$ et inactive si elle est strictement positive.\fabian{Il y a un peu confusion ici. La définition de contrainte active que tu donnes ici est correcte, mais les hypothèses de qualification de contraintes, comme la LICQ, servent elles à permettent d'utiliser les conditions KKT comme conditions nécessaires. L'autre point à considérer est qu'une contrainte d'inégalité active deviendra inactive si la direction de plus forte pente est réalisable.} La méthode implémentée dans ENLSIP est une méthode d'ensemble actif. Le principe est de ne prendre en compte que des contraintes actives pour les calculs de direction de descente et de pas à une itération donnée. Les contraintes d'inégalité actives peuvent être considérées comme des contraintes d'égalité. Cela permet de ramener le problème initial à un problème sous contraintes d'égalités. On pourrait penser qu'il suffit de prendre les inégalités qui sont égales à $0$ et de mettre de côté les autres. Or ce n'est pas ce qui est fait dans l'algorithme. L'idée est de travailler avec un ensemble de contraintes $\mathcal{W}$ appelé ensemble de travail (working set en anglais) mis à jour à chaque début et fin d'itération. $\mathcal{W}$ comprend toujours toutes les contraintes d'égalité.\fabian{Je crois de plus en plus que l'ensemble de travail considère les contraintes qui vont rester actives le long de la direction de recherche -- du moins leur linéarisation -- mais pas les autres; cf note précédente.}
-En début d'itération, $\mathcal{W}$ contient également les contraintes d'inégalité actives au point courant\fabian{Toutes les contraintes d'inégalité actives ou seulement celles qui le resteront?}. Sa mise à jour consiste à lui retirer au plus une contrainte. Une fois les directions de descente et pas calculés, on ajoute à $\mathcal{W}$ les contraintes d'inégalité devenues actives au nouveau point courant. 
-\pierre{Je pense finalement avoir compris la même chose. La contrainte que l'on retire de l'ensemble de travail est celle qui va devenir le "plus inactive" tandis que les autres vont le rester.}\fabian{À indiquer dans le texte alors.}
+Tout d'abord, une contrainte d'inégalité est considérée comme active si elle égale à $0$ et inactive si elle est strictement positive.  Cependant, \cite{lindstromwedin1988} ne mentionnent pas les hypothèses de qualification des contraintes. On peut légitimement supposer qu'il s'agit de la Linear Independance Constraint Qualification (LICQ) afin de pouvoir utiliser les conditions KKT comme conditions nécessaires d'optimalité. On rappelle que si $x^{*}$,un minimum local du problème \eqref{pb}, satisfait les conditions KKT, alors il existe $\lambda^{*} \in \real^{l}$ tel que:
+
+\begin{equation} \label{kkt}
+\begin{aligned}
+&\nabla f(x^{*}) - \sum\limits_{i=1}^{l} \lambda_{i}^{*}c_{i}(x^{*})= 0\\
+&c_{i}(x^{*}) = 0, \ \text{pour } i=1,\ldots,q\\
+&c_{j}(x^{*}) \geq 0, \ \text{pour } j=q+1,\ldots,l\\
+&\lambda_{j}^{*} \geq 0, \ \text{pour } j=q+1,\ldots,l\\
+&\lambda_{j}^{*} c_{j}(x^{*}) = 0, \ \text{pour } j=q+1,\ldots,l
+\end{aligned}
+\end{equation}
+
+La méthode implémentée dans ENLSIP est une méthode d'ensemble actif. Le principe est de ne prendre en compte que des contraintes actives pour les calculs de direction de descente et de pas à une itération donnée. Les contraintes d'inégalité actives peuvent être considérées comme des contraintes d'égalité. Cela permet de ramener le problème initial à un problème sous contraintes d'égalités. On pourrait penser qu'il suffit de prendre les inégalités qui sont égales à $0$ et de mettre de côté les autres. Or ce n'est pas ce qui est fait dans l'algorithme. L'idée est de travailler avec un ensemble de contraintes $\mathcal{W}$ appelé ensemble de travail (working set en anglais) mis à jour à chaque début et fin d'itération. $\mathcal{W}$ comprend toujours toutes les contraintes d'égalité.
+
+En début d'itération, $\mathcal{W}$ contient également les contraintes d'inégalité actives au point courant. Sa mise à jour consiste à lui retirer au plus une contrainte parmi celles qui vont devenir inactives une fois la direction de descente calculée.  En fin d'itération, lorsque le point courant est mis à jour suite au calcul de la direction de descente et de la longueur de pas, on ajoute à $\mathcal{W}$ les contraintes d'inégalité devenues actives au nouveau point courant. On retire également les contraintes d'inégalité devenues inactives.
+
+En somme, l'ensemble $\mathcal{W}$ contient les contraintes d'inégalité dont les linéarisations vont rester actives le long de la direction de recherche. Ce sont ces contraintes qui servent de base au calcul de la direction de descente.
 
 
 Les détails quant à la détermination de l'ensemble $\mathcal{W}$ se trouvent dans la section \ref{working-set}. Le lagrangien du problème s'écrit comme: 
@@ -205,26 +219,31 @@ Parmi ces $t$ contraintes, on retrouve:
 \item
 toutes les contraintes d'égalité
 \item
-les contraintes d'inégalité actives\fabian{Il faudrait peut-être trouver un autre terme ici.} considérées comme des contraintes d'égalité. 
+les contraintes d'inégalité supposées actives le long de la direction de recherche, alors considérées comme des contraintes d'égalité. 
 \end{itemize}
-On note $\hc$ la restriction de $c$ à $t$ composantes et $\ha$ sa matrice jacobienne. La linéarisation \eqref{linearisationc} de $c$ reste valable pour $\hc$.
 
-À l'itération $k$,  le point courant $x_{k}$, les vecteurs $r(x_{k})$ et $\hc(x_{k})$ ainsi que les matrices $J_{k}=J(x_{k}) \text{ et } \ha_{k}=\ha(x_{k})$ sont fixés. On cherche alors la direction de descente $p_{k}$ qui nous rapproche au mieux du minimum de la fonction objectif\fabian{Pas tout à fait; il faut au moins parler du minimum contraint. Mieux: on cherche à résoudre le système KKT.}. En injectant les linéarisations de $r$ et $\hc$, on obtient le sous-problème suivant:\fabian{Utilise l'environnement align, pas array.}
+On note $\hc$ la restriction de $c$ à $t$ composantes et $\ha$ sa matrice jacobienne. La linéarisation \ref{linearisationc} de $c$ reste valable pour $\hc$.
+
+A l'itération $k$,  le point courant $x_{k}$, les vecteurs $r(x_{k})$ et $\hc(x_{k})$ ainsi que les matrices $J_{k}=J(x_{k}) \text{ et } \ha_{k}=\ha(x_{k})$ sont fixés. On cherche alors la direction de descente $p_{k}$ qui nous rapproche au mieux d'un minimum  de la fonction objectif sous les contraintes $c$ satisfaisant les conditions KKT \eqref{kkt}. 
+
+En injectant les linéarisations de $r$ et $\hc$, on obtient le sous-problème suivant:
+
 \begin{equation} \label{souspb}
-\begin{aligned}
-	\underset{p \in \real^{n}}{\min}\ & \dfrac{1}{2}\|J_{k}p+r(x_{k})\|^{2} \\
-	\text{s.c.}\ & 	\ha_{k}p+\hc(x_{k})=0
-\end{aligned}
+\left\{ \begin{aligned}
+&\underset{p \in \real^{n}}{\min} \dfrac{1}{2}\|J_{k}p+r(x_{k})\|^{2} \\
+&\text{s.c. }  \ha_{k}p+\hc(x_{k})=0
+\end{aligned} \right.
 \end{equation}
-Il s'agit d'un problème de moindres carrés linéaires sous contraintes d'égalité linéaires.
+C'est-à-dire un problème de moindres carrés linéaires sous contraintes d'égalité linéaires.
 
 \subsubsection{Factorisation QR} \label{factqr}
 
-Le c\oe{}ur de la résolution du problème \eqref{souspb} réside dans la factorisation QR de différentes matrices.  On rappelle ci-dessous la factorisation QR d'une matrice disposant de plus de lignes que de colonnes.
+Le c\oe ur de la résolution du problème \eqref{souspb} réside dans la factorisation QR de différentes matrices.  On rappelle ci-dessous la factorisation QR d'une matrice disposant de plus de lignes que de colonnes.
 
 \newtheorem*{theo}{Théorème}
 \begin{theo}[Factorisation QR]
 Soit $M \in \mathcal{M}_{m\times n}$ avec $m$ et $n$ des entiers quelconques tel que $m\geq n$.
+
 Alors il existe $Q\text{ une matrice orthogonale } m\times m$, $ R \text{ de taille }n \times n$ une matrice triangulaire supérieure et $P \text{ une matrice de permutation } n\times n$ tel que:
 \[
 MP = Q 
@@ -260,7 +279,7 @@ $P_{a} \text{ matrice de permutation } n\times n$
 
 \textbf{\underline{N.B.}}: Les matrices issues de la décomposition QR ci-dessus ne sont pas indexées par $k$ par soucis de lisibilité mais sont bien dépendantes de l'itération en cours. Il en va de même pour les différentes factorisations QR présentées dans la suite de ce document.
 
-Par transposition et par le fait que $P_{a}P_{a}^{T} = I_{t}$\fabian{Plus simplement, une matrice de permutation est elle-même orthogonale, et la transposée d'une matrice orthogonale est égale à son inverse.}, on obtient:
+Comme $P_{a}$ est est une matrice de permutation, $P_{a}P_{a}^{T} = I_{t}$, et nous obtenons
 \begin{equation}
 \ha_{k} = P_{a}
 \begin{pmatrix}
@@ -269,21 +288,27 @@ L_{a} & 0
 Q_{a}^{T}
 \end{equation}
 où $L_{a}=R_{a}^{T}$ est une matrice triangulaire inférieure $t \times t$.
-\mfabian{Injectant cette factorisation dans \eqref{souspb}, nous obtenons :}%l'équation des contraintes du problème \ref{souspb}: 
+
+Injectant cette factorisation dans \eqref{souspb}, nous obtenons: 
 \[
-%\ha_{k}p = -c(x_{k}) \Longleftrightarrow
-P_{a}\begin{pmatrix}
+\ha_{k}p = -c(x_{k}) \Longleftrightarrow P_{a}\begin{pmatrix}
 L_{a} & 0
 \end{pmatrix}
 Q_{a}^{T}p = -c(x_{k})
 \]
+
 Posant $Q_{a}^{T}p = \begin{pmatrix}
 p_{1} \\ p_{2}
 \end{pmatrix}$ avec $p_{1} \in \real^{t}$ et $p_{2} \in \real^{n-t}$ , on a:
 \[
 P_{a}L_{a}p_{1} = -\hc(x_{k}) \Longleftrightarrow L_{a}P_{a} = -P_{a}^{T}\hc(x_{k}) = b
 \]
+<<<<<<< HEAD
 On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. Cela se comprend en introduisant l'espace nul de $\ha_{k}$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières\fabian{de (2.7)?};  on a $\ha_{k}Z=0$ d'où:
+=======
+
+On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. Cela se comprend en introduisant l'espace nul de $\ha_{k}$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières;  on a $\ha_{k}Z=0$ d'où:
+>>>>>>> 3c2b84fd24d8c1327742df5736a4fd046412e952
 
 $$
 \ha_{k}p = \ha_{k}Q_{a} \begin{pmatrix}
@@ -294,10 +319,10 @@ $$
 La stratégie va maintenant être de calculer $p_{1}$ par rapport aux contraintes puis, $p_{1}$ fixé, de calculer $p_{2}$ de sorte à minimiser la fonction objectif du problème linéarisé \eqref{souspb}. En injectant $p_{1}$ et $p_{2}$ dans cette dernière, on peut alors décomposer notre problème en deux nouveaux sous-problèmes:
 \[
 \left\{
-\begin{array}{l l}
-L_{a}p_{1} = b \\
-\underset{p_{2}}{\min} \dfrac{1}{2}\|J_{2}p_{2} + J_{1}p_{1} + r(x_{k})\|^{2}
-\end{array}\right.
+\begin{aligned}
+&L_{a}p_{1} = b \\
+&\underset{p_{2}}{\min} \dfrac{1}{2}\|J_{2}p_{2} + J_{1}p_{1} + r(x_{k})\|^{2}
+\end{aligned}\right.
 \]
 en introduisant $JQ_{a} = \begin{pmatrix}
 J_{1} & J_{2}
@@ -361,8 +386,8 @@ Par suite, posant $\delta p_2^{(\omega_{2})}$ solution de $R_{2}^{(\omega_{2})}y
 \begin{equation}
 p_2 = P_2^T\begin{pmatrix} \delta p_2^{(\omega_{2})} \\ 0 \end{pmatrix}
 \end{equation}
-\subsubsection{Résolution sans stabilisation} \label{resolutionsstab}
 
+\subsubsection{Résolution sans stabilisation} \label{resolutionsstab}
 
 Si $\bar{t}=t$, on résout directement le système $L_{a}p_{1}=b$ comme suit:
 
@@ -453,24 +478,25 @@ On peut également supposer, compte tenu de l'époque du code, cette variante é
 
 \subsection{Méthode de Newton} \label{newtonmethod}
 
+Cette section explique les calculs effectués par la fonction NEWTON du fichier dblredunls.f.
 \subsubsection{Problème à résoudre}
 
-La direction de Newton\footnote{Fonction NEWTON de dblredunls.f} est calculée via la résolution du problème sous contraintes d'égalité linéaires:
+La direction de Newton est calculée via la résolution du problème sous contraintes d'égalité linéaires:
 
 $$
-\left\{ \begin{array}{l l l}
-\underset{p \in \real^{n}}{\min}\left[ \dfrac{1}{2}p^{T}\nabla_{xx}^{2}\mathcal{L}(x_{k},\lambda)p + \nabla f(x_{k})^{T}p\right]\\
-\text{s.c}\\
-\ha_{k} p = -\hat{c}(x_{k})
-\end{array} \right.
+\left\{ \begin{aligned}
+&\underset{p \in \real^{n}}{\min}\left[ \dfrac{1}{2}p^{T}\nabla_{xx}^{2}\mathcal{L}(x_{k},\lambda)p + \nabla f(x_{k})^{T}p\right]\\
+&\text{s.c.}\\
+&\ha_{k} p = -\hat{c}(x_{k})
+\end{aligned} \right.
 $$
 
 $\nabla^{2}_{xx}\mathcal{L}(x,\lambda)$ désigne la matrice hessienne du lagrangien introduit en \ref{lagrangien} par rapport à la variable $x$, dont voici le détail de l'expression analytique:
 \[
-\begin{array}{l l l}\nabla_{x}\mathcal{L}(x,\lambda)&=\nabla f(x) - \sum\limits_{i \in \mathcal{W}} \lambda_{i}\nabla \hc_{i}(x)\\
+\begin{aligned}\nabla_{x}\mathcal{L}(x,\lambda)&=\nabla f(x) - \sum\limits_{i \in \mathcal{W}} \lambda_{i}\nabla \hc_{i}(x)\\
 &= J^{T}(x)r(x) - \sum\limits_{i=1}^{t} \lambda_{i}\nabla \hc_{i}(x)\\
 \nabla^{2}_{xx}\mathcal{L}(x,\lambda) &= J^{T}(x)J(x)+ \sum\limits_{i=1}^{m}r_i(x)\nabla^2r_i(x) - \sum\limits_{i=1}^{t}\lambda_i\nabla^2\hc_{i}(x)
-\end{array}
+\end{aligned}
 \]
 
 où $\nabla^2 r_i$ (resp. $\nabla^2 \hc_i$) désigne la matrice hessienne du $i$-ème résidu (resp. de la $i$-ème contrainte active).
@@ -480,10 +506,10 @@ On peut alors reformuler le problème sous la forme:
 
 
 \begin{equation} \label{newtonpb}
- \left\{ \begin{array}{l l l} \underset{p \in \mathbb{R}^n}{\min} \dfrac{1}{2} p^T\left[J_{k}^TJ_{k} + \Gamma \right]p + \left[J_{k}^Tr(x_{k})\right]^Tp \\ 
-s.c.\\
-\ha_{k}p = -\hc(x_{k})
-\end{array} \right.
+ \left\{ \begin{aligned} &\underset{p \in \mathbb{R}^n}{\min} \dfrac{1}{2} p^T\left[J_{k}^TJ_{k} + \Gamma \right]p + \left[J_{k}^Tr(x_{k})\right]^Tp \\ 
+&s.c.\\
+&\ha_{k}p = -\hc(x_{k})
+\end{aligned} \right.
 \end{equation}
 
 \subsubsection{Calcul de la direction de Newton}
@@ -503,6 +529,7 @@ $$ p_{1} = P_l \begin{pmatrix} \delta p_{1} \\ 0 \end{pmatrix}$$
 La suite est indépendante du rang de $\ha_{k}$ et $p_{1}$ est désormais fixé.
 
 Puisque $Q_{a}Q_{a}^T = I_n$, on a:
+<<<<<<< HEAD
 \begin{align*}
 &\dfrac{1}{2}p^T\left[J_{k}^TJ_{k} + \Gamma\right]p + \left[J_{k}^Tr(x_{k})\right]^Tp \\
 &= \dfrac{1}{2}p^T\left[Q_{a}Q_{a}^TJ_{k}^TJ_{k}Q_{a}Q_{a}^T + Q_{a}Q_{a}^T\Gamma Q_{a}Q_{a}^T\right]p + \left[J_{k}^Tr(x_{k})\right]^TQ_{a}Q_{a}^Tp \\
@@ -510,6 +537,18 @@ Puisque $Q_{a}Q_{a}^T = I_n$, on a:
 &= \dfrac{1}{2}(p_1^T\ p_2^T)W\begin{pmatrix}p_1\\p_2\end{pmatrix} + h^T\begin{pmatrix}p_1\\p_2\end{pmatrix} \\
 &= \varphi(p_2)
 \end{align*}
+=======
+
+$$
+\begin{aligned} 
+\dfrac{1}{2}p^T\left[J_{k}^TJ_{k} + \Gamma\right]p + \left[J_{k}^Tr(x_{k})\right]^Tp &= \dfrac{1}{2}p^T\left[Q_{a}Q_{a}^TJ_{k}^TJ_{k}Q_{a}Q_{a}^T + Q_{a}Q_{a}^T\Gamma Q_{a}Q_{a}^T\right]p + \left[J_{k}^Tr(x_{k})\right]^TQ_{a}Q_{a}^Tp \\
+&= \dfrac{1}{2}(p_1^T\ p_2^T) \left[Q_{a}^TJ_{k}^TJ_{k}Q_{a} + Q_{a}^T\Gamma Q_{a}\right]\begin{pmatrix} p_1 \\ p_2\end{pmatrix} + \left[(J_{k}Q_{a})^Tr(x_{k})\right]^TQ_{a}^{T}p\\
+&= \dfrac{1}{2}(p_1^T\ p_2^T)W\begin{pmatrix}p_1\\p_2\end{pmatrix} + h^T\begin{pmatrix}p_1\\p_2\end{pmatrix} \\
+&= \varphi(p_2)
+\end{aligned}
+$$
+
+>>>>>>> 3c2b84fd24d8c1327742df5736a4fd046412e952
 Avec $W = Q_{a}^TJ_{k}^TJ_{k}Q_{a} + Q_{a}^T\Gamma Q_{a}$ matrice $n\times n$ qui est trivialement symétrique et $h = (J_1\ J_2)^Tr(x_{k}) \in \mathbb{R}^n$. $p_1$ étant fixé, on souhaite minimiser $\varphi$ afin de trouver la solution du problème.
 
 On pose ensuite $E =  Q_{a}^TJ_{k}^TJ_{k}Q_{a} = \begin{pmatrix} E_{11}\ E_{12} \\ E_{21}\ E_{22} \end{pmatrix}$ avec:
@@ -529,8 +568,8 @@ On fait le même découpage pour $W$, soit $W = \begin{pmatrix} W_{11}\ W_{12} \
 Tous les blocs sont évidemment symétriques et on a $W_{12}^T = W_{21}$
 
 On peut alors récrire, pour $v \in \real^{n-t}$: $$\varphi(v) = \dfrac{1}{2} \left[2v^TW_{21}p_1 + v^TW_{22}v\right] + v^TJ_2r(x_{k}) + K$$ avec K indépendant de $v$. Les blocs de $W$ étant symétriques:
-$$ \begin{array}{l l}\nabla \varphi(v) &= W_{21}p_1 + W_{22}v + J_2r(x_{k}) \\
-\nabla^2 \varphi(v) &= W_{22} \end{array}$$
+$$ \begin{aligned}\nabla \varphi(v) &= W_{21}p_1 + W_{22}v + J_2r(x_{k}) \\
+\nabla^2 \varphi(v) &= W_{22} \end{aligned}$$
 
 Si $W_{22}$ est définie positive, le minimum de $\varphi$ s'obtient en annulant son gradient. $p_{2}$ est alors donné par la résolution du système d'inconnue $v$: $$W_{22}v = -W_{21}p_{1} -  J_2r(x_{k})$$ 
 
@@ -569,7 +608,7 @@ Si notre estimation des multiplicateurs de Lagrange comporte une ou plusieurs co
 
 Nous sommes en début d'itération $k$, l'ensemble de travail est inchangé par rapport à l'itération précédente.
 
-La première estimation des multiplicateurs de Lagrange\footnote{Fonction MULEST de dblmod2nls.f} se fait en résolvant pour $\lambda$ le système:
+La première estimation des multiplicateurs de Lagrange se fait en résolvant pour $\lambda$ le système:
 
 \begin{equation}
 \ha_{k}^T\lambda = \nabla f(x_{k})
@@ -579,20 +618,20 @@ On résout ce système en utilisant la factorisation QR de $\ha_{k}^{T}$ afin r�
 
 $$ R_{a}v = Q_{a}^T\nabla f(x) $$
 
-qui est un système triangulaire supérieur.
-
+qui est un système triangulaire supérieur. La fonction correspondant à ce calcul est la fonction MULEST du fichier dblmod2nls.f
+ 
 Notre première estimation des multiplicateurs de Lagrange est alors $\lambda=P_{a}v$. On procède comme décrit en \ref{criteresupr} afin de déterminer quelle contrainte retirer de $\mathcal{W}$. On parle de première estimation car dans le cas ou celle-ci n'implique aucune suppression de contrainte, on effectue une deuxième estimation, supposée meilleure, afin d'appliquer à nouveau notre critère de sélection.
 
 Avant de réaliser cette estimation, il nous faut calculer la direction de descente $p_{GN}$ avec la méthode de Gauss-Newton rang plein (voir section \ref{method:gn}) correspondant à l'ensemble de travail actuel.
 
-La seconde estimation des multiplicateurs de Lagrange\footnote{Fonction LEAEST de dblredunls.f} est alors la solution du système:
+La seconde estimation des multiplicateurs de Lagrange est alors la solution du système:
 \begin{equation}
 \ha_{k}^T\lambda = J_{k}^T\left[J_{k}p_{GN} + r(x_{k})\right]
 \end{equation}
 
 Notons que le terme de droite peut aussi s'écrire $J_{k}^{T}J_{k}p_{GN} + \nabla f(x_{k})$.
 
-On résout ce système manière analogue à la première estimation. 
+On résout ce système manière analogue à la première estimation. Ces calculs sont effectués au sein de la fonction LEAEST du fichier dblredunls.f.
 
 
 Si aucune contrainte n'est à supprimer, on maintient l'ensemble de travail tel quel. Sinon, on retire la contrainte de $\mathcal{W}$ et la ligne correspondant à cette contrainte de $\ha_{k}$. Cette dernière matrice étant modifiée, toutes les décompositions QR qui en découlent le sont également, soit celles de $\ha_{k}^{T}$, $L_{a}$ et $J_{2}$. Il faut donc les calculer à nouveau afin de pouvoir les utiliser dans la suite de l'itération en cours. Ceci fait, on peut calculer alors à nouveau la direction de descente avec la méthode de Gauss-Newton rang plein, direction qu'on pourra alors analyser puis re-calculer si nécessaire.
@@ -648,12 +687,12 @@ $w^{(old)}$, $z$ et $\mu$ servent à paramétrer le problème d'optimisation à 
 $w_{k}$ est définie comme la solution du problème: 
 
 \begin{equation}
-\left\{ \begin{array}{l l l l}
-\underset{w \in \real^{l}}{\min} \|w\| \\
-\text{s.c.}\\
-y^{T}\hat{w} \geq \tau \text{ ou } y^{T}\hat{w} = \tau\\
-w_i \geq w_i^{(old)}, \text{ pour } 1 \leq i \leq l
-\end{array}\right.
+\left\{ \begin{aligned} 
+&\underset{w \in \real^{l}}{\min} \|w\| \\
+&\text{s.c.}\\
+&y^{T}\hat{w} \geq \tau \text{ (ou } y^{T}\hat{w} = \tau)\\
+&w_i \geq w_i^{(old)}, \text{ pour } 1 \leq i \leq l
+\end{aligned}\right.
 \end{equation}
 
 $\hat{w}$ désigne les poids associés aux contraintes actives, $y$ et $\tau$ sont définis ci-dessous selon différents cas.
@@ -725,6 +764,7 @@ Les seules spécificités concernent le cas où l'on approche $\phi$ par un poly
 
 $$\text{Soit }P(\alpha) = \dfrac{1}{2}\|v_2\alpha^2 + v_1\alpha + v_0\|^2$$
 
+<<<<<<< HEAD
 Dénotant
 $$
 F(\alpha) = \begin{pmatrix}
@@ -768,7 +808,7 @@ Enfin, cette section montre aussi que l'on ne prend pas en compte les multiplica
 
 \section{Terminaison de l'algorithme}
 
-Cette partie concerne les conditions d'arrêt de l'algorithme.\footnote{Fonction TERCRI de dblmod2nls.f} 
+Cette partie concerne les conditions d'arrêt de l'algorithme. Les différents critères sont évalués par l'appel de la fonction  TERCRI du fichier dblmod2nls.f.
 \subsection{Critères de convergence}
 
 A la fin de chaque itération, on teste différents critères afin de savoir si l'on peut stopper l'algorithme et renvoyer la valeur de minimum trouvée. On se place en fin de l'itération $k$ avec $x_{k}$ le nouvel itéré.
@@ -819,12 +859,12 @@ Pour réaliser mes tests, je suis parti de données générées par un modèle �
 \underline{Modèle à ajuster}:
 
 $
-\begin{array}{l l l l}
-g:(t, x_1, x_2, x_3) \mapsto (t-x_1)(t-x_2)(t-x_3)\\
-\text{s.c.}\\
-x_1+x_2+x_3 = 18 \\
-x_1  x_2  x_3 = 120
-\end{array}
+\begin{aligned}
+&g:(t, x_1, x_2, x_3) \mapsto (t-x_1)(t-x_2)(t-x_3)\\
+&\text{s.c.}\\
+&x_1+x_2+x_3 = 18 \\
+&x_1  x_2  x_3 = 120
+\end{aligned}
 $
 
 Il s'agit d'un polynôme dont on souhaite chercher les racines avec les relations coefficients-racines comme contraintes.
@@ -859,11 +899,11 @@ Dans ce cas-ci, on voit que l'on a trouvé les paramètres optimaux.
 \underline{Modèle à ajuster}:
 
 $
-\begin{array}{l l l }
-g:(t, x_1, x_2) \mapsto 1 + x_1t^2 + {x_2}^3\dfrac{t^4}{3}\\
-\text{s.c.}\\
-x_1 + 2x_2 = \dfrac{1}{2}
-\end{array}
+\begin{aligned}
+&g:(t, x_1, x_2) \mapsto 1 + x_1t^2 + {x_2}^3\dfrac{t^4}{3}\\
+&\text{s.c.}\\
+&x_1 + 2x_2 = \dfrac{1}{2}
+\end{aligned}
 $
 
 On cherche $[-0.5,0.5]$ comme minimum.
@@ -888,18 +928,17 @@ Ici, la courbe bleue ne correspond pas bien à la courbe orange. Le point trouv�
 
 On peut néanmoins, en modifiant le point de départ, trouver le résultat souhaité
 En effet en partant de $x_{0} = [-0.2,0.1]$, on trouve en 10 itérations:
-
 $$
  x^{*} = \begin{pmatrix}
 -0.499987\\
 0.50882
 \end{pmatrix}$$
-
-Ce résultat, comme le montre l'illustration graphique ci-dessous, est bien plus proche du résultat que l'on souhaite obtenir. Il montre également, bien que le modèle soit simple, la sensibilité au point de départ dont le choix est un élément important.
-\begin{figure}[!h]
+Ce résultat, \mfabian{illustré à la figure~\ref{fig:courbe3}}\fabian{Utilise les références,e et ne force pas le placement d'une figure avec !h.}, est bien plus proche du résultat que l'on souhaite obtenir. Il montre également, bien que le modèle soit simple, la sensibilité au point de départ dont le choix est un élément important.
+\begin{figure}[htbp]
 \centering
 \includegraphics[scale=0.6]{images/courbe3}
 \caption{Illustration graphique}
+\label{fig:courbe3}
 \end{figure}
 
 \fabian{J'ai fait quelques ajustements dans la bibliographie, en particulier sur l'écriture des numéros de pages.}
