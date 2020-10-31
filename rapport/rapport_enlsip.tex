@@ -303,13 +303,7 @@ p_{1} \\ p_{2}
 \[
 P_{a}L_{a}p_{1} = -\hc(x_{k}) \Longleftrightarrow L_{a}P_{a} = -P_{a}^{T}\hc(x_{k}) = b
 \]
-<<<<<<< HEAD
 On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. Cela se comprend en introduisant l'espace nul de $\ha_{k}$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières\fabian{de (2.7)?};  on a $\ha_{k}Z=0$ d'où:
-=======
-
-On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. Cela se comprend en introduisant l'espace nul de $\ha_{k}$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières;  on a $\ha_{k}Z=0$ d'où:
->>>>>>> 3c2b84fd24d8c1327742df5736a4fd046412e952
-
 $$
 \ha_{k}p = \ha_{k}Q_{a} \begin{pmatrix}
 p_{1}\\p_{2}
@@ -529,7 +523,6 @@ $$ p_{1} = P_l \begin{pmatrix} \delta p_{1} \\ 0 \end{pmatrix}$$
 La suite est indépendante du rang de $\ha_{k}$ et $p_{1}$ est désormais fixé.
 
 Puisque $Q_{a}Q_{a}^T = I_n$, on a:
-<<<<<<< HEAD
 \begin{align*}
 &\dfrac{1}{2}p^T\left[J_{k}^TJ_{k} + \Gamma\right]p + \left[J_{k}^Tr(x_{k})\right]^Tp \\
 &= \dfrac{1}{2}p^T\left[Q_{a}Q_{a}^TJ_{k}^TJ_{k}Q_{a}Q_{a}^T + Q_{a}Q_{a}^T\Gamma Q_{a}Q_{a}^T\right]p + \left[J_{k}^Tr(x_{k})\right]^TQ_{a}Q_{a}^Tp \\
@@ -537,18 +530,7 @@ Puisque $Q_{a}Q_{a}^T = I_n$, on a:
 &= \dfrac{1}{2}(p_1^T\ p_2^T)W\begin{pmatrix}p_1\\p_2\end{pmatrix} + h^T\begin{pmatrix}p_1\\p_2\end{pmatrix} \\
 &= \varphi(p_2)
 \end{align*}
-=======
 
-$$
-\begin{aligned} 
-\dfrac{1}{2}p^T\left[J_{k}^TJ_{k} + \Gamma\right]p + \left[J_{k}^Tr(x_{k})\right]^Tp &= \dfrac{1}{2}p^T\left[Q_{a}Q_{a}^TJ_{k}^TJ_{k}Q_{a}Q_{a}^T + Q_{a}Q_{a}^T\Gamma Q_{a}Q_{a}^T\right]p + \left[J_{k}^Tr(x_{k})\right]^TQ_{a}Q_{a}^Tp \\
-&= \dfrac{1}{2}(p_1^T\ p_2^T) \left[Q_{a}^TJ_{k}^TJ_{k}Q_{a} + Q_{a}^T\Gamma Q_{a}\right]\begin{pmatrix} p_1 \\ p_2\end{pmatrix} + \left[(J_{k}Q_{a})^Tr(x_{k})\right]^TQ_{a}^{T}p\\
-&= \dfrac{1}{2}(p_1^T\ p_2^T)W\begin{pmatrix}p_1\\p_2\end{pmatrix} + h^T\begin{pmatrix}p_1\\p_2\end{pmatrix} \\
-&= \varphi(p_2)
-\end{aligned}
-$$
-
->>>>>>> 3c2b84fd24d8c1327742df5736a4fd046412e952
 Avec $W = Q_{a}^TJ_{k}^TJ_{k}Q_{a} + Q_{a}^T\Gamma Q_{a}$ matrice $n\times n$ qui est trivialement symétrique et $h = (J_1\ J_2)^Tr(x_{k}) \in \mathbb{R}^n$. $p_1$ étant fixé, on souhaite minimiser $\varphi$ afin de trouver la solution du problème.
 
 On pose ensuite $E =  Q_{a}^TJ_{k}^TJ_{k}Q_{a} = \begin{pmatrix} E_{11}\ E_{12} \\ E_{21}\ E_{22} \end{pmatrix}$ avec:
@@ -763,9 +745,7 @@ La méthode de calcul de pas est expliquée dans l'article \cite{lindstromwedin1
 Les seules spécificités concernent le cas où l'on approche $\phi$ par un polynôme l'interpolant en deux points $0$ et $\alpha_{i}$ prédéfini. En effet, les coefficients du polynôme interpolateur changent lorsque l'on ajoute des contraintes.
 
 $$\text{Soit }P(\alpha) = \dfrac{1}{2}\|v_2\alpha^2 + v_1\alpha + v_0\|^2$$
-
-<<<<<<< HEAD
-Dénotant
+Notant
 $$
 F(\alpha) = \begin{pmatrix}
 r_1(x_{k}+\alpha p_{k}) \\
@@ -773,8 +753,8 @@ r_1(x_{k}+\alpha p_{k}) \\
 r_m(x_{k}+\alpha p_{k}) \\
 \sqrt{\hat{w}_1}\hc_1(x_{k}+\alpha p_{k}) \\
 \vdots \\
-\sqrt{\hat{w}_t}\hc_t(x_{k}+\alpha p_{k}),
-\end{pmatrix}
+\sqrt{\hat{w}_t}\hc_t(x_{k}+\alpha p_{k})
+\end{pmatrix},
 $$
 $v_0$, $v_1$ et $v_2$ dans $\mathbb{R}^{m+t}$ peuvent s'exprimer comme
 \begin{align*} 
