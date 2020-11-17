@@ -173,7 +173,7 @@ De même pour la $j$-ième contrainte, $j=1,\ldots,l$:
 \begin{equation}
 c_{j}(\tilde{x} + \delta x) \approx c_{j}(\tilde{x}) + \left(\dfrac{\partial c_{j}(\tilde{x})}{\partial x_{1}}, \ldots, \dfrac{\partial c_{j}(\tilde{x})}{\partial x_{n}}\right)\delta x
 \end{equation}
-\pierre{J'ai repris exactement les mêmes notations que celles de Lindstrom et Wedin (1988) pour les linéarisations}
+
 
 Ce qui, en notant $J$ et $A$ les matrices jacobiennes respectives des multi-fonctions $r$ et $c$, donne les linéarisations:
 \begin{align} 
@@ -222,7 +222,7 @@ toutes les contraintes d'égalité
 les contraintes d'inégalité supposées actives le long de la direction de recherche, alors considérées comme des contraintes d'égalité. 
 \end{itemize}
 
-On note $\hc$ la restriction de $c$ à $t$ composantes et $\ha$ sa matrice jacobienne. La linéarisation \ref{linearisationc} de $c$ reste valable pour $\hc$.
+On note $\hc$ la restriction de $c$ à $t$ composantes et $\ha$ sa matrice jacobienne. La linéarisation \eqref{linearisationc} de $c$ reste valable pour $\hc$.
 
 A l'itération $k$,  le point courant $x_{k}$, les vecteurs $r(x_{k})$ et $\hc(x_{k})$ ainsi que les matrices $J_{k}=J(x_{k}) \text{ et } \ha_{k}=\ha(x_{k})$ sont fixés. On cherche alors la direction de descente $p_{k}$ qui nous rapproche au mieux d'un minimum  de la fonction objectif sous les contraintes $c$ satisfaisant les conditions KKT \eqref{kkt}. 
 
@@ -259,7 +259,6 @@ Cette factorisation n'est pas unique mais dispose de nombreux avantages pratique
 
 \subsubsection{Décomposition en sous-systèmes}
 
-\pierre{J'ai modifié les indices afin de rendre les calculs plus lisibles et de maintenir une correspondance entre les différentes matrices}
 On souhaite d'abord factoriser la matrice $\ha_{k}$ de taille $t \times n$ mais comme $t \leq n$, on passe par la factorisation QR de $\ha_{k}^{T}$:
 \begin{equation} \label{qrAt}
 \ha_{k}^{T}P_{a}=Q_{a}
@@ -267,7 +266,7 @@ On souhaite d'abord factoriser la matrice $\ha_{k}$ de taille $t \times n$ mais 
 R_{a} \\
 0
 \end{pmatrix}
-\end{equation}\pierre{indice $a$ pour faire référence à la matrice $\ha_{k}$}
+\end{equation}
 avec: \begin{itemize}
 \item
 $Q_{a}\text{ matrice orthogonale } n\times n$, 
@@ -301,9 +300,9 @@ Posant $Q_{a}^{T}p = \begin{pmatrix}
 p_{1} \\ p_{2}
 \end{pmatrix}$ avec $p_{1} \in \real^{t}$ et $p_{2} \in \real^{n-t}$ , on a:
 \[
-P_{a}L_{a}p_{1} = -\hc(x_{k}) \Longleftrightarrow L_{a}P_{a} = -P_{a}^{T}\hc(x_{k}) = b
+P_{a}L_{a}p_{1} = -\hc(x_{k}) \Longleftrightarrow L_{a}p_{1} = -P_{a}^{T}\hc(x_{k}) = b
 \]
-On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. Cela se comprend en introduisant l'espace nul de $\ha_{k}$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières\fabian{de (2.7)?};  on a $\ha_{k}Z=0$ d'où:
+On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. Cela se comprend en introduisant l'espace nul de $\ha_{k}$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières colonnes de $Q_{a}$.\fabian{de (2.7)?}\pierre{Oui, c'est pour faire référence à la jacobienne des $t$ contraintes de l'ensemble de travail au point courant $x_{k}$};  on a $\ha_{k}Z=0$ d'où:
 $$
 \ha_{k}p = \ha_{k}Q_{a} \begin{pmatrix}
 p_{1}\\p_{2}
@@ -320,7 +319,7 @@ La stratégie va maintenant être de calculer $p_{1}$ par rapport aux contrainte
 \]
 en introduisant $JQ_{a} = \begin{pmatrix}
 J_{1} & J_{2}
-\end{pmatrix}$, $J_{1} \in \mathcal{M}_{m\times t}$ et $J_{2} \in \mathcal{M}_{m\times (n-t)}$, puisque $Jp=JQ_{a}Q_{a}^{T}p$.\fabian{Ne sépare pas les équations de lignes blanches.}\fabian{La matrice de permutation semble avoir disparu.}
+\end{pmatrix}$, $J_{1} \in \mathcal{M}_{m\times t}$ et $J_{2} \in \mathcal{M}_{m\times (n-t)}$, puisque $Jp=JQ_{a}Q_{a}^{T}p$, $Q_{a}$ étant orthogonale.
 
 Avant d'entamer les calculs, calculons le rang de $\ha_{k}$. Comme $Q_{a}$ et $P_{a}$ sont orthogonales, on a $\text{rang}(\ha_{k})=\text{rang}(L_{a})$ et $L_{a}$ étant triangulaire d'éléments diagonaux décroissants en valeur absolue, on définit son rang comme étant:
 \begin{equation} \label{tbar}
@@ -331,33 +330,40 @@ Cette valeur sera comparée au nombre de contraintes actives $t$ et modifiera la
 
 \subsubsection{Résolution avec stabilisation} \label{resolutionavecstab}
 
-Si $\bar{t}<t$, autrement dit si la matrice $\ha_{k}$ est de rang déficient, il faut réaliser ce qui est appelé dans \cite{lindstromwedin1988} une stabilisation \pierre{la justification me semble d'ordre numérique mais il n y a pas d'information supplémentaire dans l'article}\fabian{Les problèmes d'une matrice de rang déficient sont connus, aussi il est concevable que les auteurs ne justifient pas davantage. Toutes les méthodes passant par les conditions KKT ont besoin de $A$ de rang plein pour que le système linéaire correspond ait une et une seule solution.}. Cela passe par la factorisation QR de $L_{a}$: 
+Si $\bar{t}<t$, autrement dit si la matrice $\ha_{k}$ est de rang déficient, il faut réaliser ce qui est appelé dans \cite{lindstromwedin1988} une stabilisation. Cela passe par la factorisation QR de $L_{a}$: 
 \begin{equation} \label{qrL}
-L_{a}P_{l} = Q_{l} R_{l}
-\end{equation}\pierre{indice $l$ pour faire référence à la matrice triangulaire inférieure dont c'est la décomposition mais coïncide avec $l$ le nombre total de contraintes du problèmes (voir \eqref{pb})}\fabian{Il est alors possible d'utiliser l'indice $\ell$.}
+L_{a}P_{\ell} = Q_{\ell} R_{\ell}
+\end{equation}
 
 avec:
 \begin{itemize}
 \item
-$Q_l$ matrice orthogonale $t \times t$
+$Q_{\ell}$ matrice orthogonale $t \times t$
 \item
-$R_l$ matrice triangulaire supérieure $t \times t$ à éléments diagonaux décroissants en valeur absolue 
+$R_{\ell}$ matrice triangulaire supérieure $t \times t$ à éléments diagonaux décroissants en valeur absolue 
 \item
-$P_l$ matrice de permutation $t \times t$
+$P_{\ell}$ matrice de permutation $t \times t$
 \end{itemize}
 
-Le système d'inconnue $p_{1}$ devient alors:
-$$ R_lP_l^Tp_1 = -Q_l^TP_a^Tc(x_{k}) = b_{1} $$
+Partant de $L_{a}p_{1}=b$, le système d'inconnue $p_{1}$ devient alors:
+$$ 
+\begin{aligned}
+&Q_{\ell}R_{\ell}P_{\ell}^{T}p_{1}=b\\
+\Longleftrightarrow& R_{\ell}P_{\ell}^Tp_1 = Q_{\ell}^{T}b\\
+\Longleftrightarrow& R_{\ell}P_{\ell}^Tp_1 = b_{1}
+\end{aligned}
+$$
 \fabian{Un peu difficile à suivre. On avait à la page précédente $L_ap_1 = b$ ce qui ne donne pas l'équation ci-dessous si on remplace $L_a$ en utilisant \eqref{qrL}.} 
-Pour $\omega_{1} \leq t$, on définit $R_l^{(\omega_{1})}$ comme \mfabian{la sous-matrice de $R_l$ constituée des éléments $r_{ij}$, avec $i \leq i,j \leq \omega_1$.}
-% le bloc triangulaire supérieur composé des $\omega_{1}$ premières lignes et colonnes de $R_l$ et $b_{1}^{(\omega_{1})}$ le vecteur des $\omega_{1}$ premiers éléments de $b_{1}$.
- Par suite, posant $\delta p_1^{(\omega_{1})}$ solution du système d'inconnue $y \in \real^{\omega_{1}}$  $R_ly=b_{1}^{(\omega_{1})}$, on obtient:
+\pierre{J'ai pourtant repris les mêmes équations que celle de l'article en modifiant seulement les indices...}
+Pour $\omega_{1} \leq t$, on définit $R_{\ell}^{(\omega_{1})}$ comme la sous-matrice de $R_{\ell}$ constituée des éléments $r_{ij}$, avec $i \leq \omega_{1},j \leq \omega_1$. $b_{1}^{(\omega_{1})}$ désigne le vecteur constitué des $\omega_{1}$ premiers éléments de $b_{1}$.
+
+ Par suite, posant $\delta p_1^{(\omega_{1})}$ solution du système d'inconnue $y \in \real^{\omega_{1}}$  $R_{\ell}y=b_{1}^{(\omega_{1})}$, on obtient:
 
 \begin{equation}
-p_1 = P_l\begin{pmatrix} \delta p_1^{(\omega_{1})} \\ 0 \end{pmatrix}
+p_1 = P_{\ell}\begin{pmatrix} \delta p_1^{(\omega_{1})} \\ 0 \end{pmatrix}
 \end{equation}
 
-$p_1$ étant désormais calculé, il reste à résoudre pour $p_2$ $\underset{p_2}{\min} \dfrac{1}{2}\|J_2p_2 + (J_1P_lp_1 + r(x_{k}))\|^2$. 
+$p_1$ étant désormais calculé, il reste à résoudre pour $p_2$ $\underset{p_2}{\min} \dfrac{1}{2}\|J_2p_2 + (J_1P_{\ell}p_1 + r(x_{k}))\|^2$. 
 
 
 On se sert alors de la factorisation QR de $J_{2}$:
@@ -373,9 +379,9 @@ $Q_2$ matrice orthogonale $m \times m$
 $R_{2}$ matrice triangulaire supérieure $(n-t) \times (n-t)$ à éléments diagonaux décroissants en valeur absolue 
 \item
 $P_2$ matrice de permutation $(n-t) \times (n-t)$
-\end{itemize}\pierre{indice 2 pour pour appuyer la dépendance à $J_{2}$}
+\end{itemize}
 
-On pose $d_{2} = -Q_2^T(r(x_{k}) + J_1P_lp_1)$ et pour $\omega_{2} \leq n-t$, on définit $R_{2}^{(\omega_{2} )}$ comme le bloc triangulaire supérieur composé des $\omega_{2}$ premières lignes et colonnes de $R_{2}$ et $d_{2}^{(\omega_{2})} $ le vecteur constitué des $\omega_{2}$ premiers éléments de $d_{2}$.
+On pose $d_{2} = -Q_2^T(r(x_{k}) + J_1P_{\ell}p_1)$ et pour $\omega_{2} \leq n-t$, on définit $R_{2}^{(\omega_{2} )}$ comme le bloc triangulaire supérieur composé des $\omega_{2}$ premières lignes et colonnes de $R_{2}$ et $d_{2}^{(\omega_{2})} $ le vecteur constitué des $\omega_{2}$ premiers éléments de $d_{2}$.
 Par suite, posant $\delta p_2^{(\omega_{2})}$ solution de $R_{2}^{(\omega_{2})}y =d^{(\omega_{2})}$, on obtient:
 \begin{equation}
 p_2 = P_2^T\begin{pmatrix} \delta p_2^{(\omega_{2})} \\ 0 \end{pmatrix}
@@ -385,7 +391,7 @@ p_2 = P_2^T\begin{pmatrix} \delta p_2^{(\omega_{2})} \\ 0 \end{pmatrix}
 
 Si $\bar{t}=t$, on résout directement le système $L_{a}p_{1}=b$ comme suit:
 
-Pour $\omega_{1} \leq t$, on définit $L_{11}^{(\omega_{1})}$ comme le bloc triangulaire inférieur composé des $\omega_{1}$ premières lignes et colonnes de $L_{a}$ et $b^{(\omega_{1})}= (b_1, b_2, \ldots, b_{\omega_{1}})^T$. Par suite, posant $\delta p_1^{(\omega_{1})} \text{ comme étant la solution de } L_{a}^{(\omega_{1})}y = b^{(\omega_{1})}$, on obtient:
+Pour $\omega_{1} \leq t$, on définit $L_{a}^{(\omega_{1})}$ comme le bloc triangulaire inférieur composé des $\omega_{1}$ premières lignes et colonnes de $L_{a}$ et $b^{(\omega_{1})}= (b_1, b_2, \ldots, b_{\omega_{1}})^T$. Par suite, posant $\delta p_1^{(\omega_{1})} \text{ comme étant la solution de } L_{a}^{(\omega_{1})}y = b^{(\omega_{1})}$, on obtient:
 \begin{equation} \label{calculp1}
 p_1 = \begin{pmatrix} \delta p_1^{(\omega_{1})} \\ 0 \end{pmatrix}
 \end{equation}
@@ -400,7 +406,7 @@ p_2 = P_2^T\begin{pmatrix} \delta p_2^{(\omega_{2})} \\ 0 \end{pmatrix}
 \end{equation}
 
 \subsubsection{Solution du sous-problème}
-Finalement, dans un cas comme dans l'autre, la solution du problème sous contraintes \ref{souspb} de dimension $(\omega_{1}, \omega_{2})$ est donnée par: 
+Finalement, dans un cas comme dans l'autre, la solution du problème sous contraintes \eqref{souspb} de dimension $(\omega_{1}, \omega_{2})$ est donnée par: 
 \begin{equation}
 {p^{(\omega_{1},\omega_{2})} = Q_{a} \begin{pmatrix} p_1 \\ p_2 \end{pmatrix}}
 \end{equation}
@@ -424,11 +430,11 @@ Cette méthode suit le schéma de résolution détaillé dans la section \ref{me
 \begin{equation} \label{systsubdim}
 Ru=v
 \end{equation}
-Cela définit comment découper la matrice $R$ afin de résoudre ce système comme en \ref{calculp1} ou \ref{calculp2}.
+Cela définit comment découper la matrice $R$ afin de résoudre ce système comme en \eqref{calculp1} ou \eqref{calculp2}.
 
-Par suite, $\omega_{1}$ est la dimension à utiliser pour résoudre le système d'inconnue $u=P_l^{T}p_1$: $$R_{a}u = -Q_l^TP_{a}^Tc(x_{k})$$
+Par suite, $\omega_{1}$ est la dimension à utiliser pour résoudre le système d'inconnue $u=P_{\ell}^{T}p_1$: $$R_{a}u = -Q_{\ell}^TP_{a}^Tc(x_{k})$$
 
- $\omega_{2}$ est celle à utiliser pour résoudre celui d'inconnue $p_{2}$: $$R_{2}p_2 = -Q_2^T(r(x_{k}) + J_1P_lp_1)$$ 
+ $\omega_{2}$ est celle à utiliser pour résoudre celui d'inconnue $p_{2}$: $$R_{2}p_2 = -Q_2^T(r(x_{k}) + J_1P_{\ell}p_1)$$ 
  
  \subsubsection{Calcul de la dimension}
  
@@ -439,7 +445,7 @@ Par suite, $\omega_{1}$ est la dimension à utiliser pour résoudre le système 
  
  $$\ws_{i} = \|v_{1},\ldots, v_{i}\| \text{ et } h_{i}=\left \|\frac{v_{1}}{R_{11}},\ldots,\frac{v_{i}}{R_{ii}} \right \|$$
  
- $\ws_{i}$ est la norme du second membre du système \ref{systsubdim} en dimension $i$, tandis que $h_{i}$ peut être vu comme une estimation de la norme de la solution de ce même sous-système. Ces grandeurs servent à déterminer la plus petite dimension à utiliser pour résoudre \ref{systsubdim}.
+ $\ws_{i}$ est la norme du second membre du système \eqref{systsubdim} en dimension $i$, tandis que $h_{i}$ peut être vu comme une estimation de la norme de la solution de ce même sous-système. Ces grandeurs servent à déterminer la plus petite dimension à utiliser pour résoudre \eqref{systsubdim}.
  
  Celle-ci, notée $\text{mindim}$, est définie comme $\underset{1\leq i \leq \bar{r}}{\text{argmax }} h_{i}|R_{ii}|$.
  
@@ -465,7 +471,7 @@ Un des problèmes rencontrés vis-à-vis de cette partie est que je ne suis pas 
 
 \subsubsection{Commentaires sur la méthode}
 
-Les indications du code Fortran (voir fonction GNDCHK du fichier dblmod2nls.f) semblent indiquer que cette méthode est utilisée dans le cas où on a ajouté une contrainte à l'ensemble de travail au début de l'itération, ou bien si un des multiplicateurs de Lagrange associés aux contraintes d'inégalités actives est négatif. L'article \cite{lindstromwedin1988} fait mention page 7 que cette méthode permettrait de \mfabian{``stabiliser''} la méthode de Gauss-Newton rang plein, puisque l'on fait une minimisation dans un sous-espace de $\real^{n}$. 
+Les indications du code Fortran (voir fonction GNDCHK du fichier dblmod2nls.f) semblent indiquer que cette méthode est utilisée dans le cas où on a ajouté une contrainte à l'ensemble de travail au début de l'itération, ou bien si un des multiplicateurs de Lagrange associés aux contraintes d'inégalités actives est négatif.  \cite{lindstromwedin1988} font mention page 7 que cette méthode permettrait de "stabiliser'' la méthode de Gauss-Newton rang plein, puisque l'on fait une minimisation dans un sous-espace de $\real^{n}$. 
 
 On peut également supposer, compte tenu de l'époque du code, cette variante était utile pour réduire les erreurs numériques qui peuvent arriver dans la variante rang plein. Cela ne reste qu'une supposition mais diminuerait la pertinence de ce calcul de dimension.
 
@@ -485,7 +491,7 @@ $$
 \end{aligned} \right.
 $$
 
-$\nabla^{2}_{xx}\mathcal{L}(x,\lambda)$ désigne la matrice hessienne du lagrangien introduit en \ref{lagrangien} par rapport à la variable $x$, dont voici le détail de l'expression analytique:
+$\nabla^{2}_{xx}\mathcal{L}(x,\lambda)$ désigne la matrice hessienne du lagrangien introduit en \eqref{lagrangien} par rapport à la variable $x$, dont voici le détail de l'expression analytique:
 \[
 \begin{aligned}\nabla_{x}\mathcal{L}(x,\lambda)&=\nabla f(x) - \sum\limits_{i \in \mathcal{W}} \lambda_{i}\nabla \hc_{i}(x)\\
 &= J^{T}(x)r(x) - \sum\limits_{i=1}^{t} \lambda_{i}\nabla \hc_{i}(x)\\
@@ -511,14 +517,14 @@ On peut alors reformuler le problème sous la forme:
 \pierre{Cette méthode de Newton n'est que mentionnée dans l'article et il n y a pas de justification dans les commentaires du code Fortran, mis à part le fait que c'est dit plus efficace proche de la solution. Aucune mention de l'ignorance ou non des résidus... Peut être plus de détails dans le livre se trouvant uniquement en Suède ? (qui ressemble de plus à une boîte de Pandore contenant tous les mystères de cet algorithme...)}
 Comme pour la méthode Gauss-Newton, on pose $Q_{a}^Tp = \begin{pmatrix} p_1\\p_2\end{pmatrix}$, $p_1 \in \mathbb{R}^t, p_2 \in \mathbb{R}^{n-t}$ et $J_{k}Q_{a} = \begin{pmatrix}J_1 & J_2 \end{pmatrix}$. On va également calculer $p_{1}$ par rapport aux contraintes en premier, puis calculer $p_{2}$ par la fonction objectif. 
 
-Sont connues les factorisations QR des matrices $\ha_{k}$, $L_{a}$ et $J_{2}$, respectivement en \ref{qrAt}, \ref{qrL} et \ref{qrJ2}. On a également connaissance du rang de $\ha_{k}$.
+Sont connues les factorisations QR des matrices $\ha_{k}$, $L_{a}$ et $J_{2}$, respectivement en \eqref{qrAt}, \eqref{qrL} et \eqref{qrJ2}. On a également connaissance du rang de $\ha_{k}$.
 
 Si rang$(\ha_{k})=t$, soit $b = -P_1^T\hc(x_{k})$, l'équation des contraintes s'écrit alors \\ $L_{a}p_1 = b$. Etant de rang $t$, ce système triangulaire inférieur se résout directement.
 
-Si rang$(\ha_{k})<t$, on injecte la factorisation QR de $L_{a}$ dans l'équation des contraintes. Le premier système à résoudre devient alors $R_lP_l^Tp_1 = b_1$ avec $b_{1}=Q_l^{T}b$. 
+Si rang$(\ha_{k})<t$, on injecte la factorisation QR de $L_{a}$ dans l'équation des contraintes. Le premier système à résoudre devient alors $R_{\ell}P_{\ell}^Tp_1 = b_1$ avec $b_{1}=Q_{\ell}^{T}b$. 
 
-Soit $\omega_{r}$ le rang de $R_l$, $\delta p_{1}$ la solution du système triangulaire supérieur $R_l^{(\omega_{r})}\delta p_{1} = b_{1}$, ce qui donne:
-$$ p_{1} = P_l \begin{pmatrix} \delta p_{1} \\ 0 \end{pmatrix}$$
+Soit $\omega_{r}$ le rang de $R_{\ell}$, $\delta p_{1}$ la solution du système triangulaire supérieur $R_{\ell}^{(\omega_{r})}\delta p_{1} = b_{1}$, ce qui donne:
+$$ p_{1} = P_{\ell} \begin{pmatrix} \delta p_{1} \\ 0 \end{pmatrix}$$
 
 La suite est indépendante du rang de $\ha_{k}$ et $p_{1}$ est désormais fixé.
 
@@ -557,7 +563,7 @@ Si $W_{22}$ est définie positive, le minimum de $\varphi$ s'obtient en annulant
 
 Encore une fois, si $W_{22}$ est définie positive, on utilise la factorisation de Cholesky de $W_{22}$ pour se ramener à la résolution de deux systèmes triangulaires consécutifs. Sinon, on renvoie une erreur et l'itération en cours est dite "en échec".
 
-Si le calcul aboutit, la solution du problème \ref{newtonpb}, notée $p_{N}$ pour Newton, est encore une fois donnée par:
+Si le calcul aboutit, la solution du problème \eqref{newtonpb}, notée $p_{N}$ pour Newton, est encore une fois donnée par:
 $$ p_{N} = Q_{a}\begin{pmatrix}p_{1}\\ p_{2} \end{pmatrix}$$
 
 
@@ -620,7 +626,7 @@ Si aucune contrainte n'est à supprimer, on maintient l'ensemble de travail tel 
 
 \subsection{Commentaires}
 
-Cette section ainsi que la précédente illustrent un point important sur la méthode de l'algorithme: il s'agit d'une approche primale. C'est-à-dire que les itérés ne sont calculés que par rapport au problème primal \ref{pb} et on ne prend jamais en compte les multiplicateurs de Lagrange impliqués dans le problème dual. Comme nous le verrons plus tard, ils ne sont pas non plus impliqués dans le calcul de la longueur de pas. C'est sûrement une des raisons qui expliquent pourquoi on suppose que seules les directions de descente sont réalisables. La mise en place d'une approche primal-dual, avec une prise en compte plus globale des multiplicateurs de Lagrange, pourrait se révéler intéressante.
+Cette section ainsi que la précédente illustrent un point important sur la méthode de l'algorithme: il s'agit d'une approche primale. C'est-à-dire que les itérés ne sont calculés que par rapport au problème primal \eqref{pb} et on ne prend jamais en compte les multiplicateurs de Lagrange impliqués dans le problème dual. Comme nous le verrons plus tard, ils ne sont pas non plus impliqués dans le calcul de la longueur de pas. C'est sûrement une des raisons qui expliquent pourquoi on suppose que seules les directions de descente sont réalisables. La mise en place d'une approche primal-dual, avec une prise en compte plus globale des multiplicateurs de Lagrange, pourrait se révéler intéressante.
 
 Il est également à noter que je ne suis pas parvenu à vraiment comprendre de justification théorique du critère de sélection des contraintes et que j'ai simplement reformulé le fonctionnement de l'algorithme sur ce point.
 
@@ -681,7 +687,7 @@ $\hat{w}$ désigne les poids associés aux contraintes actives, $y$ et $\tau$ so
 
 \begin{enumerate}
 \item
-Si $z^{T}\hat{w}^{(old)} \geq \mu$ et $\omega_{1}\neq t$ ($\omega_{1}$ est la dimension définie en \ref{calculp1})
+Si $z^{T}\hat{w}^{(old)} \geq \mu$ et $\omega_{1}\neq t$ ($\omega_{1}$ est la dimension définie en \eqref{calculp1})
  
  \begin{algorithmic}
  \STATE{$\tau = 0$}
@@ -859,15 +865,14 @@ En 13 itérations, on trouve
 2,00133
 \end{pmatrix}$
 
-\newpage
-
-\begin{figure}[!h]
+\begin{figure}
 \centering
 \includegraphics[scale=0.6]{images/courbe1}
 \caption{Illustration graphique}
+\label{fig:courbe1}
 \end{figure}
 
-Ci-dessus, la courbe orange représente le modèle à partit duquel on a généré les données. La courbe bleue, qui colle quasiment parfaitement à l'orange, montre les prédictions du modèle avec $x^{*}$ comme paramètre. Les points verts sont les données perturbées. 
+Sur la figure~\ref{fig:courbe1}, la courbe orange représente le modèle à partit duquel on a généré les données. La courbe bleue, qui colle quasiment parfaitement à l'orange, montre les prédictions du modèle avec $x^{*}$ comme paramètre. Les points verts sont les données perturbées. 
 
 Dans ce cas-ci, on voit que l'on a trouvé les paramètres optimaux.
 \newpage
@@ -898,22 +903,23 @@ En 9 itérations, on trouve
 -0.10921
 \end{pmatrix}$
 
-\begin{figure}[!h]
+\begin{figure}
 \centering
 \includegraphics[scale=0.6]{images/courbe2}
 \caption{Illustration graphique}
+\label{fig:courbe2}
 \end{figure}
 
-Ici, la courbe bleue ne correspond pas bien à la courbe orange. Le point trouvé est bien un minimum respectant bien les critères de convergence sauf que c'est un minimum local. Dans un contexte d'ajustement de modèle, cela ne donne évidemment pas un résultat satisfaisant.
+Ici, comme l'illustre la figure~\ref{fig:courbe2}, le modèle de paramètre $x^{*}$ ne correspond pas au modèle initial. Le point trouvé est cependant bien un minimum respectant bien les critères de convergence. Seulement il s'agit très probablement d'un minimum local dont le modèle résultant est assez éloigné de ce que l'on espérait. Dans un contexte d'ajustement de modèle, cela ne donne évidemment pas un résultat satisfaisant car une différence dans les paramètres peut complètement modifier l'allure de la fonction résultante.
 
-On peut néanmoins, en modifiant le point de départ, trouver le résultat souhaité
+On peut néanmoins, en modifiant le point de départ, trouver le résultat souhaité.
 En effet en partant de $x_{0} = [-0.2,0.1]$, on trouve en 10 itérations:
 $$
  x^{*} = \begin{pmatrix}
 -0.499987\\
 0.50882
 \end{pmatrix}$$
-Ce résultat, \mfabian{illustré à la figure~\ref{fig:courbe3}}\fabian{Utilise les références,e et ne force pas le placement d'une figure avec !h.}, est bien plus proche du résultat que l'on souhaite obtenir. Il montre également, bien que le modèle soit simple, la sensibilité au point de départ dont le choix est un élément important.
+Ce résultat, illustré à la figure~\ref{fig:courbe3}, est bien plus proche du résultat que l'on souhaite obtenir. Il montre également, bien que le modèle soit simple, la sensibilité au point de départ dont le choix est un élément important.
 \begin{figure}[htbp]
 \centering
 \includegraphics[scale=0.6]{images/courbe3}
@@ -921,7 +927,6 @@ Ce résultat, \mfabian{illustré à la figure~\ref{fig:courbe3}}\fabian{Utilise 
 \label{fig:courbe3}
 \end{figure}
 
-\fabian{J'ai fait quelques ajustements dans la bibliographie, en particulier sur l'écriture des numéros de pages.}
 
 %\bibliographystyle{plain}
 \bibliographystyle{plainnat}
