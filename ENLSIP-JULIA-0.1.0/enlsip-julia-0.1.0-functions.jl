@@ -32,7 +32,7 @@ function show_iter(step::Iteration)
         phase = "Newton"
     elseif step.code == -1
         phase = "Subspace Minimization"
-    else
+    elseif step.code == 1
         phase = "Gauss-Newton"
     end
 
@@ -45,9 +45,8 @@ function show_iter(step::Iteration)
     println("Next point : $(step.x + step.α * step.p)")
     println("dimA = $(step.dimA); dimJ2 = $(step.dimJ2)")
     println("rankA = $(step.rankA); rankJ2 = $(step.rankJ2)")
- #   println("b = $(step.b_gn); d = $(step.d_gn)")
+    # println("b = $(step.b_gn); d = $(step.d_gn)")
     println("\n")
-    
 end
     
 
@@ -1382,6 +1381,10 @@ end
 # 3) min λ_i >= ε_rel * max |λ_i|
 #     i                  i
 #            >= ε_rel * (1+||r(x)||^2) (if 1 inequality)
+# 4) ||d1||^2 <= ε_x * ||x||
+# 5) ||r(x)||^2 <= ε_abs^2
+# 6) ||x_previous - x|| < ε_x * ||x||
+# 7) sqrt(ε_rel) / ||p_gn|| > 0.25 (gn for Gauss-Newton)
 # 8) The last digit in the convergence code has a specific value (TODO : not implemented yet)
 
 # Abnormal termination criterias
@@ -1420,17 +1423,19 @@ function check_termination_criteria(
     ε_c::Float64
 )
     exit_code = 0
+    alfnoi = sqrt(ε_rel) / norm(iter.p)
 
-    # Not a restart step and direction computed with Gauss-Newton or Newton method
-
-    if !iter.restart && iter.code != -1
+    # Preliminary conditions
+    preliminary_cond = !(iter.restart || (iter.code == -1  && alfnoi <= 0.25))
+    if preliminary_cond
 
         # Check necessary conditions
-        necessary_crit = iter.del && norm(active_C.cx) > ε_c
+        grad_res = norm(transpose(active_C.A) * iter.λ - ∇fx)
+        necessary_crit = (!iter.del) && (norm(active_C.cx) < ε_c) && (grad_res < sqrt(ε_rel)*(1+norm(∇fx)))
         if W.l-W.t > 0
             inactive_index = W.inactive[1:W.l-W.t]
             inactive_cx = cx[inactive_index]
-            necessary_crit = necessary_crit && all(>(0), inactive_cx)
+            necessary_crit = necessary_crit && (all(>(0), inactive_cx))
         end
         if W.t > W.q
             if W.t == 1
@@ -1451,15 +1456,15 @@ function check_termination_criteria(
             
             d1 = @view iter.d_gn[1:iter.dimJ2]
             x_diff = norm(prev_iter.x - iter.x)
-            alfnoi = sqrt(ε_rel) / norm(iter.p)
+           
             
             # Criterion 4
-            if dot(d1,d1) <= rx_sum * ε^2
+            if dot(d1,d1) <= rx_sum * ε_rel^2
                 exit_code += 10000
             end
             # Criterion 5
             if rx_sum <= ε_abs^2
-                exit_code += 300
+                exit_code += 2000
             end
             # Criterion 6
             if x_diff < ε_x * norm(iter.x)
@@ -1510,7 +1515,7 @@ function (enlsip_010::ENLSIP)(
         q::Int64,
         l::Int64)
 
-    ε_abs = sqrt(eps(Float64))
+    ε_abs = eps(Float64)
     ε_rel = sqrt(eps(Float64))
     ε_x = sqrt(eps(Float64))
     ε_c = sqrt(eps(Float64))
