@@ -82,7 +82,7 @@ end
 
 function show_working_set(w::WorkingSet)
     s1 = "$(w.q) equalities, $(w.l-w.q) inequalities\n"
-    s2 = "active : $(w.active[1:w.t])\n"
+    s2 = (w.t != 0 ? "active : $(w.active[1:w.t])\n" : "No constraints in working set\n")
     s3 = "inactive : $(w.inactive[1:w.l-w.t])\n"
     s = string(s1,s2,s3)
     println(s)
@@ -109,7 +109,7 @@ function pseudo_rank(diag_T::Vector, τ::Float64 = sqrt(eps(Float64)))
 end
 
 # SUBDIR
-# Computes a search direction with Gauss-Newton method
+# Computes a search direction with Gauss-Newton method using dimA and dimJ2 as subspaces dimensions
 
 
 function sub_search_direction(
@@ -156,6 +156,7 @@ function sub_search_direction(
     p = Q1 * [p1;p2]
     return p, b, d
 end
+
 
 # GNSRCH
 # Compute the search direction with the method of Gauss-Newton
@@ -1003,7 +1004,6 @@ function penalty_weight_update(
         max_norm_weight_update!(nrm2_Ap, rmy, α_w, δ, w, active, t, K)
     end
     # TODO: add weight update using euclidean norm method
-    
     return w
 end
 
