@@ -1,4 +1,4 @@
-using LinearAlgebra, Polynomials
+using LinearAlgebra, Polynomials, Printf
 
 ##### FUNCTIONS FOR ENLSIP-JULIA-0.2.0 ####
 # Capital names before functions correspond to Fortran77 equivalent routine.
@@ -614,7 +614,7 @@ function evaluate_violated_constraints(
         while i <= W.l - W.t
             k = W.inactive[i]
             if cx[k] < ε
-                println("Constraint $k added to active set")
+                # println("Constraint $k added to active set")
                 add_constraint!(W, i)
                 added = true
             else
@@ -1688,7 +1688,7 @@ function linesearch_constrained(
     # println("ψ0 = $ψ0")
     if (-diff_psi <= τ * dψ0 * α_km1) || (ψ_km1 < γ * ψ0)
         # Termination condition satisfied at α0
-        println("Armijo satisfied at α0")
+        # println("Armijo satisfied at α0")
         diff_psi = ψ0 - ψ_k
 
         # REDUCE
@@ -1696,7 +1696,7 @@ function linesearch_constrained(
         reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
 
         while reduction_likely
-            println("Essential reduction is likely")
+            # println("Essential reduction is likely")
             # Value of the objective function can most likely be reduced
             # Minimize in R^n using 3 points : α_km2, α_km1 and α_k
             # New suggestion of the steplength is α_kp1, pk is its approximated value
@@ -1712,7 +1712,7 @@ function linesearch_constrained(
             diff_psi = ψ0 - ψ_k
             reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
         end
-        println("No more reduction required")
+        # println("No more reduction required")
         # Terminate but choose the best point out of α_km1 and α_k
         if (ψ_km1 - pk >= η * diff_psi) && (ψ_k < ψ_km1)
             α_km1 = α_k
@@ -1720,14 +1720,14 @@ function linesearch_constrained(
         end
     # Termination condition not satisfied at α0
     else
-        println("Armijo not satisfied at α0")
+        # println("Armijo not satisfied at α0")
         diff_psi = ψ0 - ψ_k
         # Test termination condition at α1, i.e. α_k
         if (-diff_psi <= τ * dψ0 * α_k) || (ψ_k < γ * ψ0)
             # Termination condition satisfied at α1
-            println("Armijo satisfied at α1")
+            # println("Armijo satisfied at α1")
             # Check if α0 is somewhat good
-            println("Check if α0 is somewhat good")
+            # println("Check if α0 is somewhat good")
             if ψ0 <= ψ_km1
                 x_min = α_k
                 r(x+α_k*p,rx_new,dummy)
@@ -1762,7 +1762,7 @@ function linesearch_constrained(
             reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
 
             while reduction_likely
-                println("Essential reduction is likely")
+                # println("Essential reduction is likely")
                 # Value of the objective function can most likely be reduced
                 # Minimize in R^n using 3 points : α_km2, α_km1 and α_k
                 # New suggestion of the steplength is α_kp1, pk its approximated value
@@ -1779,15 +1779,15 @@ function linesearch_constrained(
                 reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
             end
             # Terminate but choose the best point out of α_km1 and α_k
-            println("No more reduction required")
+            # println("No more reduction required")
             if (ψ_km1 - pk >= η * diff_psi) && (ψ_k < ψ_km1)
                 α_km1 = α_k
                 ψ_km1 = ψ_k
             end
 
         else
-            println("Armijo not satisfied at α1")
-            println("Pure Armijo Goldstein step is taken")
+            # println("Armijo not satisfied at α1")
+            # println("Pure Armijo Goldstein step is taken")
             # Take a pure Goldstein-Armijo step
             α_km1 = goldstein_armijo_step(ψ0,dψ0,α_min,τ,p_max,x,α_k,p,r,c,w,m,l,t,active,inactive)
         end
@@ -1982,10 +1982,8 @@ function check_termination_criteria(
         if necessary_crit
 
             # Check the sufficient conditions
-            println("Conditions nécessaires vérifiées")
             d1 = @view iter.d_gn[1:iter.dimJ2]
             x_diff = norm(prev_iter.x - x)
-
 
             # Criterion 4
             if dot(d1,d1) <= rx_sum * ε_rel^2
@@ -2024,6 +2022,33 @@ function check_termination_criteria(
     return exit_code
 end
 
+# OUTPUT
+# Print the useful informations at the end of current iteration
+
+
+function output(iter::Iteration, W::WorkingSet, nb_iter::Int64)
+
+    s_act = "("
+    for i=1:W.t
+        s_act = (i<W.t ? string(s_act,W.active[i],",") : string(s_act,W.active[i],")"))
+    end
+    method = (iter.code > 0 ? " $(iter.code)" : "$(iter.code)")
+    if nb_iter == 0
+        println("****************************************")
+        println("*                                      *")
+        println("*          ENLSIP-JULIA-0.2.0          *")
+        println("*                                      *")
+        println("****************************************\n")
+
+        println("Constraints qualification : $(W.q) equalities, $(W.l) inequalities\n")
+        println("iter    objective    method   ||p||   dimA  dimJ2     α       max weight    working set")
+        @printf "   %d  %.8e   %s   %.3e   %d     %d   %.3e   %.4e    %s\n"  nb_iter dot(iter.rx,iter.rx) method norm(iter.p) iter.dimA iter.dimJ2 iter.α maximum(iter.w) s_act
+    elseif nb_iter < 10
+        @printf "   %d  %.8e   %s   %.3e   %d     %d   %.3e   %.4e    %s\n"  nb_iter dot(iter.rx,iter.rx) method norm(iter.p) iter.dimA iter.dimJ2 iter.α maximum(iter.w) s_act
+    elseif nb_iter >= 10 && nb_iter < 100
+        @printf "  %d  %.8e   %s   %.3e   %d     %d   %.3e   %.4e    %s\n"  nb_iter dot(iter.rx,iter.rx) method norm(iter.p) iter.dimA iter.dimJ2 iter.α maximum(iter.w) s_act
+    end
+end
 
 ##### ENLSIP 0.2.0 #####
 
@@ -2037,11 +2062,6 @@ enlsip_020 = ENLSIP([0.0],0.0)
 function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         n::Int64,m::Int64,q::Int64,l::Int64)
 
-    println("******************************")
-    println("*                            *")
-    println("*     ENLSIP-JULIA-0.2.0     *")
-    println("*                            *")
-    println("******************************")
 
     ε_float = eps(Float64)
     ε_abs = ε_float
@@ -2064,12 +2084,12 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     c(x0,cx,A)
 
     first_iter = Iteration(x0,zeros(n),rx,cx,l,1.0,zeros(l),zeros(l),0,0,0,0,zeros(n),zeros(n),0.,0.,0.,false,true,false,false,0,1)
-    println("\n******** Itération $nb_iteration ********\n")
+    # println("\n******** Itération $nb_iteration ********\n")
     # Initialization of the working set
     working_set = init_working_set(cx, K, first_iter, q, l)
-    println("First working set :")
-    println("$q equalities, $l inequalities")
-    show_working_set(working_set)
+    # println("First working set :")
+    # println("$q equalities, $l inequalities")
+    # show_working_set(working_set)
     first_iter.t = working_set.t
 
     # Compute jacobians at current point
@@ -2109,8 +2129,8 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     first_iter.w = w
     x = x0 + α*first_iter.p
 
-    show_iter(first_iter)
-    show_working_set(working_set)
+    # show_iter(first_iter)
+    # show_working_set(working_set)
 
     # Evaluate residuals, constraints and compute jacobians at new point
 
@@ -2125,27 +2145,32 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     # Check for termination criterias at new point
     exit_code = check_termination_criteria(first_iter,previous_iter,working_set,active_C,x,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
 
+
+
     # Check for violated constraints and add it to the working set
     first_iter.add = evaluate_violated_constraints(cx,working_set)
     active_C = Constraint(cx[working_set.active[1:working_set.t]], A[working_set.active[1:working_set.t],:])
 
 
 
-    println("Exit = $exit_code\n")
+    # println("Exit = $exit_code\n")
 
 
-    nb_iteration += 1
+
     previous_iter = first_iter
     first_iter.x = x
     first_iter.rx = rx
     first_iter.cx = cx
+    output(first_iter, working_set, nb_iteration)
+    nb_iteration += 1
     iter = copy(first_iter)
+    iter.first = false
 
     # Main loop for next iterations
 
     while exit_code == 0
 
-        println("\n******** Itération $nb_iteration ********\n")
+        # println("\n******** Itération $nb_iteration ********\n")
 
         p_gn = zeros(n)
         # Estimation of the Lagrange multipliers
@@ -2175,7 +2200,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         x = x + α * iter.p
 
         # Print some informations about the newly finished iteration
-        show_iter(iter)
+        # show_iter(iter)
 
         # Evaluate residuals, constraints and compute jacobians at new point
         r.ctrl = 1
@@ -2189,28 +2214,29 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         # Check for termination criterias at new point
         exit_code = check_termination_criteria(iter,previous_iter,working_set,active_C,x,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
 
-
-
         # Check for violated constraints and add it to the working set
         iter.add = evaluate_violated_constraints(cx,working_set)
         active_C = Constraint(cx[working_set.active[1:working_set.t]], A[working_set.active[1:working_set.t],:])
-        println("Working set at the end of iteration :")
-        show_working_set(working_set)
+        # println("Working set at the end of iteration :")
+        # show_working_set(working_set)
 
-        println("\nExit = $exit_code\n")
+        # println("\nExit = $exit_code\n")
 
 
-        nb_iteration += 1
         previous_iter = iter
         iter.x = x
         iter.rx = rx
         iter.cx = cx
+        output(iter,working_set,nb_iteration)
+        nb_iteration += 1
         iter = copy(iter)
         iter.del = false
         iter.add = false
 
     end
+    println("\nExit code = $exit_code")
     enlsip_020.sol = iter.x
     enlsip_020.obj_value = dot(rx,rx)
+    @printf "Objective value = %.9e\n" enlsip_020.obj_value
     return
 end
