@@ -198,10 +198,8 @@ function new_point!(x::Vector,
     return
 end
 
-
 # SUBDIR
 # Computes a search direction with Gauss-Newton method using dimA and dimJ2 as subspaces dimensions
-
 
 function sub_search_direction(
         J1::Matrix,
@@ -376,8 +374,6 @@ function hessian_cons!(
     end
 end
 
-
-
 # NEWTON
 # Computes the search direction p by minimizing :
 #      T    T                             T       T
@@ -508,7 +504,7 @@ function first_lagrange_mult_estimate!(A::Matrix, λ::Vector, ∇fx::Vector, cx:
     return
 end
 
-
+# LEAST
 # Compute second order least squares estimate of Lagrange multipliers
 function second_lagrange_mult_estimate!(
     A::Matrix,
@@ -706,7 +702,7 @@ function update_working_set!(
             end
         end
     # No first order estimate implies deletion of a constraint
-elseif s == 0
+    elseif s == 0
         F_A = qr(transpose(C.A), Val(true))
         L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
@@ -843,7 +839,6 @@ function gn_previous_step(
 end
 
 # GNDCHK
-
 # Decides what method should be used to compute the search direction
 # This information is told by the value returned by method_code :
 # 1 if Gauss-Newton search direction is accepted
@@ -2024,7 +2019,6 @@ end
 
 # OUTPUT
 # Print the useful informations at the end of current iteration
-
 
 function output(iter::Iteration, W::WorkingSet, nb_iter::Int64)
 
