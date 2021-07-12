@@ -1327,20 +1327,6 @@ function coefficients_linesearch!(v0::Vector,
     v_buff = zeros(m+l)
     concatenate!(v_buff,rx_new,cx_new,w,m,t,l,active,inactive)
 
-    # Modification of v1 components related to constraints
-    if t != 0
-        for i = 1:t
-            k = active[i]
-            v1[m+k] = sqrt(w[k]) * v1[m+k]
-        end
-    end
-    if l-t != 0
-        for j = 1:l-t
-            k = inactive[j]
-            v1[m+k] = (cx[k] > 0 ? 0.0 : sqrt(w[k]) * v1[m+k])
-        end
-    end
-
     # Computation of v2 components
     v2[:] = ((v_buff - v0) / α_k - v1) / α_k
     return
@@ -1539,14 +1525,18 @@ function check_reduction(
     # Data
     δ = 0.2
 
-    reduction_likely = true
     # println("\nAppel de check_reduction")
-    # println("ψ_α = $ψ_α")
+    # println("α = $α")
+    # println("α_k = $α_k")
     # println("approx_k = $approx_k")
+    # println("ψ_α = $ψ_α")
     # println("diff_psi = $diff_psi")
+
     if ψ_α - approx_k >= η * diff_psi
-        println("ψ_k = $ψ_k")
+        # println("ψ_k = $ψ_k")
         reduction_likely = !((ψ_α - ψ_k < η * diff_psi) && (ψ_k > δ * ψ_α))
+    else
+        reduction_likely = false
     end
     return reduction_likely
 end
@@ -1631,11 +1621,28 @@ function linesearch_constrained(
     η = 0.3 # \eta
     τ = 0.25 # \tau
     γ = 0.4 # \gamma
+
     α_min, α_max = α_low, α_upp
     α_k = min(α0, α_max)
     α_km1 = 0.0
     ψ_km1 = ψ0
     p_max = norm(p,Inf)
+
+    # LINC2
+    # Computation of v1
+    v1 = JpAp
+    if t != 0
+        for i = 1:t
+            k = active[i]
+            v1[m+k] = sqrt(w[k]) * v1[m+k]
+        end
+    end
+    if l-t != 0
+        for j = 1:l-t
+            k = inactive[j]
+            v1[m+k] = (cx[k] > 0 ? 0.0 : sqrt(w[k]) * v1[m+k])
+        end
+    end
 
     ψ_k = psi(x,α_k,p,r,c,w,m,l,t,active,inactive)
 
@@ -1644,7 +1651,7 @@ function linesearch_constrained(
     rx_new, cx_new = zeros(m), zeros(l)
     r(x+α_k*p,rx_new,dummy)
     c(x+α_k*p,cx_new,dummy)
-    v1 = JpAp
+
     v0,v2 = zeros(m+l), zeros(m+l)
     coefficients_linesearch!(v0,v1,v2,α_k,rx,cx,rx_new,cx_new,w,m,t,l,active,inactive)
 
@@ -1681,14 +1688,15 @@ function linesearch_constrained(
     # println("ψ0 = $ψ0")
     if (-diff_psi <= τ * dψ0 * α_km1) || (ψ_km1 < γ * ψ0)
         # Termination condition satisfied at α0
-        # println("Armijo satisfied at α0")
+        println("Armijo satisfied at α0")
         diff_psi = ψ0 - ψ_k
 
+        # REDUCE
         # Check if essential reduction is likely
         reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
 
         while reduction_likely
-            # println("Essential reduction is likely")
+            println("Essential reduction is likely")
             # Value of the objective function can most likely be reduced
             # Minimize in R^n using 3 points : α_km2, α_km1 and α_k
             # New suggestion of the steplength is α_kp1, pk is its approximated value
@@ -1704,32 +1712,29 @@ function linesearch_constrained(
             diff_psi = ψ0 - ψ_k
             reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
         end
-        # println("No more reduction required")
+        println("No more reduction required")
         # Terminate but choose the best point out of α_km1 and α_k
-        if ψ_k < ψ_km1
+        if (ψ_km1 - pk >= η * diff_psi) && (ψ_k < ψ_km1)
             α_km1 = α_k
             ψ_km1 = ψ_k
         end
     # Termination condition not satisfied at α0
     else
-        # println("Armijo not satisfied at α0")
+        println("Armijo not satisfied at α0")
         diff_psi = ψ0 - ψ_k
         # Test termination condition at α1, i.e. α_k
         if (-diff_psi <= τ * dψ0 * α_k) || (ψ_k < γ * ψ0)
             # Termination condition satisfied at α1
-            # println("Armijo satisfied at α1")
+            println("Armijo satisfied at α1")
             # Check if α0 is somewhat good
-            # println("Check if α0 is somewhat good")
+            println("Check if α0 is somewhat good")
             if ψ0 <= ψ_km1
                 x_min = α_k
                 r(x+α_k*p,rx_new,dummy)
                 c(x+α_k*p,cx_new,dummy)
-                v1 = JpAp
                 v0,v2 = zeros(m+l), zeros(m+l)
                 coefficients_linesearch!(v0,v1,v2,α_k,rx,cx,rx_new,cx_new,w,m,t,l,active,inactive)
                 α_kp1, pk, β, pβ = minrm(v0,v1,v2,x_min,α_min,α_max)
-                # println("α_kp1 = $α_kp1 , pk = $pk")
-                # println("β = $α_kp1 , pβ = $pk")
                 if α_kp1 != β && pβ < pk && β <= α_k
                     α_kp1 = β
                     pk = pβ
@@ -1757,7 +1762,7 @@ function linesearch_constrained(
             reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
 
             while reduction_likely
-                # println("Essential reduction is likely")
+                println("Essential reduction is likely")
                 # Value of the objective function can most likely be reduced
                 # Minimize in R^n using 3 points : α_km2, α_km1 and α_k
                 # New suggestion of the steplength is α_kp1, pk its approximated value
@@ -1774,21 +1779,20 @@ function linesearch_constrained(
                 reduction_likely = check_reduction(α_km1,ψ_km1,α_k,ψ_k,pk,η,diff_psi)
             end
             # Terminate but choose the best point out of α_km1 and α_k
-            # println("No more reduction required")
-            if ψ_k < ψ_km1
+            println("No more reduction required")
+            if (ψ_km1 - pk >= η * diff_psi) && (ψ_k < ψ_km1)
                 α_km1 = α_k
                 ψ_km1 = ψ_k
             end
 
         else
-            # println("Armijo not satisfied at α1")
-            # println("Pure Armijo Goldstein step is taken")
+            println("Armijo not satisfied at α1")
+            println("Pure Armijo Goldstein step is taken")
             # Take a pure Goldstein-Armijo step
             α_km1 = goldstein_armijo_step(ψ0,dψ0,α_min,τ,p_max,x,α_k,p,r,c,w,m,l,t,active,inactive)
         end
     end
     α = α_km1
-    # println("α = $α")
     return α
 end
 
@@ -1933,6 +1937,7 @@ function check_termination_criteria(
     prev_iter::Iteration,
     W::WorkingSet,
     active_C::Constraint,
+    x::Vector,
     cx::Vector,
     rx_sum::Float64,
     ∇fx::Vector,
@@ -1954,6 +1959,7 @@ function check_termination_criteria(
         # Check necessary conditions
         grad_res = norm(transpose(active_C.A) * iter.λ - ∇fx)
         necessary_crit = (!iter.del) && (norm(active_C.cx) < ε_c) && (grad_res < sqrt(ε_rel)*(1+norm(∇fx)))
+
         if W.l-W.t > 0
             inactive_index = W.inactive[1:W.l-W.t]
             inactive_cx = cx[inactive_index]
@@ -1969,15 +1975,16 @@ function check_termination_criteria(
             lagrange_mult_pos = [iter.λ[i] for i=W.q+1:W.t if iter.λ[i] > 0]
             sigmin = (isempty(lagrange_mult_pos) ? 0 : minimum(lagrange_mult_pos))
             necessary_crit = necessary_crit && (sigmin >= ε_rel * factor)
+
         end
 
 
         if necessary_crit
 
             # Check the sufficient conditions
-
+            println("Conditions nécessaires vérifiées")
             d1 = @view iter.d_gn[1:iter.dimJ2]
-            x_diff = norm(prev_iter.x - iter.x)
+            x_diff = norm(prev_iter.x - x)
 
 
             # Criterion 4
@@ -1989,7 +1996,7 @@ function check_termination_criteria(
                 exit_code += 2000
             end
             # Criterion 6
-            if x_diff < ε_x * norm(iter.x)
+            if x_diff < ε_x * norm(x)
                 exit_code += 300
             end
             # Criterion 7
@@ -2042,7 +2049,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     ε_x = sqrt(ε_float)
     ε_c = sqrt(ε_float)
     MAX_ITER = 100
-    # MAX_ITER = 2
+    #MAX_ITER = 11
     nb_iteration = 0
 
     # Vector of penalty constants
@@ -2116,7 +2123,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     ∇fx = transpose(J) * rx
 
     # Check for termination criterias at new point
-    exit_code = check_termination_criteria(first_iter,previous_iter,working_set,active_C,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
+    exit_code = check_termination_criteria(first_iter,previous_iter,working_set,active_C,x,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
 
     # Check for violated constraints and add it to the working set
     first_iter.add = evaluate_violated_constraints(cx,working_set)
@@ -2180,7 +2187,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         ∇fx = transpose(J) * rx
 
         # Check for termination criterias at new point
-        exit_code = check_termination_criteria(iter,previous_iter,working_set,active_C,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
+        exit_code = check_termination_criteria(iter,previous_iter,working_set,active_C,x,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
 
 
 
@@ -2199,6 +2206,8 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         iter.rx = rx
         iter.cx = cx
         iter = copy(iter)
+        iter.del = false
+        iter.add = false
 
     end
     enlsip_020.sol = iter.x
