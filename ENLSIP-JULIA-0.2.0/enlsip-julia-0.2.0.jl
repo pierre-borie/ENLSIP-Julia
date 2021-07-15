@@ -504,7 +504,7 @@ function first_lagrange_mult_estimate!(A::Matrix, λ::Vector, ∇fx::Vector, cx:
     return
 end
 
-# LEAST
+# LEAEST
 # Compute second order least squares estimate of Lagrange multipliers
 function second_lagrange_mult_estimate!(
     A::Matrix,
@@ -868,16 +868,17 @@ function check_gn_direction(
     δ = 1e-1
     c1, c2, c3, c4, c5 = 5e-1, 1e-1, 4e0, 1e1, 5e-2
     ε_rel = eps(Float64)
-    β_k = sqrt(d1nrm + b1nrm)
+    β_k = sqrt(d1nrm^2 + b1nrm^2)
 
     method_code = 1
-    cond1 = (iter_number == 1 || constraint_added || constraint_deleted)
+    cond1 = (iter_number == 0 || constraint_added || constraint_deleted)
     cond2 = (β_k < c1 * iter_km1.β)
-    cond3 = ((iter_km1.progress > c2 * iter_km1.predicted_reduction) && ((dnrm <= c3 * β_k)))
-    if !(cond1 || cond2 || cond3)
+    # TODO: add implementation of progress and predicted_reduction
+    # cond3 = ((iter_km1.progress > c2 * iter_km1.predicted_reduction) && ((dnrm <= c3 * β_k)))
+    if !(cond1 || cond2 ) # || cond3)
         method_code = -1
         non_linearity_k = sqrt(d1nrm*d1nrm + active_c_sum)
-             non_linearity_km1 = sqrt(d1nrm_as_km1 + active_c_sum)
+        non_linearity_km1 = sqrt(d1nrm_as_km1 + active_c_sum)
         to_reduce = false
         if W.q < W.t
             to_reduce = (to_reduce || any(<(0), λ[W.q+1:W.t]))
@@ -1096,9 +1097,7 @@ function search_direction_analys!(
     nrm_d1_asprev = norm(d_gn[1:prev_dimJ2m1])
 
 
-
     method_code, β = check_gn_direction(nrm_b1_gn, nrm_d1_gn, nrm_d1_asprev, nrm_d_gn, active_cx_sum, iter_number, rankA, n, m, restart, constraint_added, constraint_deleted, working_set, cx, λ, previous_iter)
-
 
     # Gauss-Newton accepted
     if method_code == 1
@@ -1173,6 +1172,168 @@ function psi(
     return 0.5 * (dot(r_new,r_new) + penalty_constraint_sum)
 end
 
+# ASSORT
+
+function assort!(
+    K::Array{Array{Float64,1},1},
+    w::Vector,
+    t::Int64,
+    active::Vector)
+
+    for i = 1:t, ii = 1:4
+        k = active[i]
+        if w[k] > K[ii][k]
+            for j = 4:-1:ii+1
+                K[j][k] = K[j-1][k]
+            end
+            K[ii][k] = w[k]
+        end
+    end
+    return
+end
+
+
+# EUCMOD
+# Solve the problem :
+#
+#     min ||w||      (euclidean norm)
+# s.t.
+#     w_i ≧ w_old_i
+#
+#     <y,w> ≧ τ  (if ctrl = 2)
+#
+#     <y,w> = τ  (if ctrl = 1)
+
+function min_norm_w!(
+    ctrl::Int64,
+    w::Vector,
+    w_old::Vector,
+    y::Vector,
+    τ::Float64,
+    pos_index::Vector,
+    nb_pos::Int64)
+
+    w[:] = w_old
+
+    if nb_pos > 0
+        y_sum = dot(y,y)
+        y_norm = norm(y)
+        # Scale the vector y
+        if y_norm != 0.0 y /= y_norm end
+        τ_new = τ
+        s = 0.0
+        n_runch = nb_pos
+        terminated = false
+        while !terminated
+            τ_new -= s
+            c = (norm(y,Inf) <= eps(Float64) ? 1.0 : τ_new / y_sum)
+            y_sum, s = 0.0, 0.0
+            n_runch = nb_pos
+            i_stop = n_runch
+            k = 1
+            while k <= n_runch
+                i = pos_index[k]
+                buff = c * y[k] * y_norm
+                if buff >= w_old[i]
+                    w[i] = buff
+                    y_sum += y[k]^2
+                    k += 1
+                else
+                    s += w_old[i] * y[k] * y_norm
+                    for j = k:n_runch
+                        pos_index[j] = pos_index[j+1]
+                        y[j] = y[j+1]
+                    end
+                    n_runch -= 1
+                end
+            end
+            # println("fin while k ≦ n_runch")
+            y_sum *= y_norm * y_norm
+            terminated = (n_runch <= 0 ) || (ctrl == 2) || (i_stop == n_runch)
+            # println("terminated = $terminated")
+        end
+
+    end
+    return
+end
+
+
+# EUCNRM
+# Update the penalty constants using the euclidean norm
+
+function euclidean_norm_weight_update!(
+    vA::Vector,
+    cx::Vector,
+    active::Vector,
+    t::Int64,
+    μ::Float64,
+    dimA::Int64,
+    previous_w::Vector,
+    w::Vector,
+    K::Array{Array{Float64,1},1})
+
+    if t == 0
+        # if no active constraints, previous penalty weights are used
+        w[:] = previous_w
+    else
+        # Compute z = [<∇c_i(x),p>^2]_i for i ∈ active
+        z = vA.^2
+        # Compute ztw = z(TR)w_old where w_old holds the 4th lowest weights used so far
+        # for constraints in active set
+        w_old = K[4]
+        ztw = dot(z, w_old[active[1:t]])
+        pos_index = zeros(Int64,t)
+
+        if (ztw >= μ) && (dimA < t)
+
+            # if ztw ≧ μ, no need to change w_old unless t = dimA
+            y = zeros(t)
+            # Form vector y and scalar γ (\gamma)
+            # pos_index holds indeces for the y_i > 0
+            ctrl, nb_pos, γ = 2, 0, 0.0
+            for i = 1:t
+                k = active[i]
+                y_elem = vA[i] * (vA[i] + cx[k])
+                if y_elem > 0
+                    nb_pos += 1
+                    pos_index[nb_pos] = k
+                    y[nb_pos] = y_elem
+                else
+                    γ -= y_elem * w_old[k]
+                end
+            end
+            min_norm_w!(ctrl,w,w_old,y,γ,pos_index,nb_pos)
+        elseif (ztw < μ) && (dimA < t)
+
+            # Form vector e and scalar τ (\tau)
+            e = zeros(t)
+            ctrl, nb_pos, τ = 2, 0, μ
+            for i = 1:t
+                k = active[i]
+                e_elem = -vA[i] * cx[k]
+                if e_elem > 0
+                    nb_pos += 1
+                    pos_index[nb_pos] = k
+                    e[nb_pos] = e_elem
+                else
+                    τ -= e_elem * w_old[k]
+                end
+            end
+            min_norm_w!(ctrl,w,w_old,e,τ,pos_index,nb_pos)
+        elseif (ztw < μ) && (dimA == t)
+
+            # Use vector z already formed (z = [<∇c_i(x),p>^2]_i for i ∈ active)
+            # pos_index holds the indeces in active since z elements are > 0
+            ctrl = 1
+            pos_index = active[1:t]
+            min_norm_w!(ctrl,w,w_old,z,μ,pos_index,t)
+        end
+        assort!(K,w,t,active)
+    end
+    return
+end
+
+
 # MAXNRM
 # Update the penalty weights corresponding to the
 # constraints in the current working setb
@@ -1185,8 +1346,7 @@ function max_norm_weight_update!(
         w::Vector,
         active::Vector,
         t::Int64,
-        K::Array{Array{Float64,1},1}
-)
+        K::Array{Array{Float64,1},1})
     μ = (abs(α_w-1.0) <= δ ? 0.0 : rmy / nrm2_Ap)
     i1 = (active[1] != 0 ? active[1] : 1)
 
@@ -1214,6 +1374,10 @@ function max_norm_weight_update!(
     return
 end
 
+# WEIGHT
+# Determine the penalty constants that should be used in the current linesearch
+# where ψ(α) is approximalety minimized
+
 function penalty_weight_update(
         w_old::Vector,
         Jp::Vector,
@@ -1225,7 +1389,7 @@ function penalty_weight_update(
         active::Vector,
         t::Int64,
         dimA::Int64,
-        norm_code::Int64 = 0)
+        norm_code::Int64)
     # Data
     δ = 0.25
     w = w_old[:]
@@ -1252,9 +1416,9 @@ function penalty_weight_update(
     rmy = (abs(Jp_rx + nrm2_Jp) / δ) - nrm2_Jp
     if norm_code == 0
         max_norm_weight_update!(nrm2_Ap, rmy, α_w, δ, w, active, t, K)
+    elseif norm_code == 2
+        euclidean_norm_weight_update!(Ap,cx,active,t,rmy,dimA,w_old,w,K)
     end
-    # TODO: add weight update using euclidean norm method
-
     #                               T                       T
     # Computation of ψ'(0) = [J(x)p] r(x)+   Σ      w_i*[∇c_i(x) p]c_i(x)
     #                                     i ∈ active
@@ -1845,8 +2009,8 @@ function compute_steplength(
     previous_α::Float64,
     prev_rankJ2::Int64,
     rankJ2::Int64,
-    method_code::Int64
-    )
+    method_code::Int64,
+    weight_code::Int64)
 
     # Data
     error = 0
@@ -1859,7 +2023,7 @@ function compute_steplength(
 
     if method_code != 2
         # Compute penalty weights and derivative of ψ at α = 0
-        w, dψ0 = penalty_weight_update(w_old, Jp, active_Ap, K, rx, rx_sum, cx, work_set.active, work_set.t, dimA)
+        w, dψ0 = penalty_weight_update(w_old, Jp, active_Ap,K,rx,rx_sum,cx,work_set.active,work_set.t,dimA,weight_code)
 
         #
         # Compute ψ(0) = 0.5 * [||r(x)||^2 +    Σ     (w_i*c_i(x)^2)]
@@ -1870,7 +2034,7 @@ function compute_steplength(
         # TODO : handle error due to ψ'(0) > 0
 
         # Determine upper bound of the steplength
-        α_upp = upper_bound_steplength(A, cx, p, work_set.inactive, work_set.t, work_set.l, ind_constraint_del)
+        α_upp = upper_bound_steplength(A,cx,p,work_set.inactive,work_set.t,work_set.l,ind_constraint_del)
         α_low = α_upp / 3000.0
 
         # Determine a first guess of the steplength
@@ -1942,10 +2106,10 @@ function check_termination_criteria(
     ε_abs::Float64,
     ε_rel::Float64,
     ε_x::Float64,
-    ε_c::Float64
-)
+    ε_c::Float64)
+
     exit_code = 0
-    alfnoi = sqrt(ε_rel) / norm(iter.p)
+    alfnoi = ε_rel / (norm(iter.p) + ε_abs)
 
     # Preliminary conditions
     preliminary_cond = !(iter.restart || (iter.code == -1  && alfnoi <= 0.25))
@@ -2020,12 +2184,22 @@ end
 # OUTPUT
 # Print the useful informations at the end of current iteration
 
-function output(iter::Iteration, W::WorkingSet, nb_iter::Int64)
+function output!(
+    iter::Iteration,
+    W::WorkingSet,
+    nb_iter::Int64,
+    β_prev::Float64,
+    cx_sum::Float64)
 
-    s_act = "("
-    for i=1:W.t
-        s_act = (i<W.t ? string(s_act,W.active[i],",") : string(s_act,W.active[i],")"))
+    if norm(W.active, Inf) > 0
+        s_act = "("
+        for i=1:W.t
+            s_act = (i<W.t ? string(s_act,W.active[i],",") : string(s_act,W.active[i],")"))
+        end
+    else
+        s_act = " -"
     end
+    speed = (nb_iter == 0 ? 0.0 : iter.β / β_prev)
     method = (iter.code > 0 ? " $(iter.code)" : "$(iter.code)")
     if nb_iter == 0
         println("****************************************")
@@ -2033,15 +2207,34 @@ function output(iter::Iteration, W::WorkingSet, nb_iter::Int64)
         println("*          ENLSIP-JULIA-0.2.0          *")
         println("*                                      *")
         println("****************************************\n")
-
-        println("Constraints qualification : $(W.q) equalities, $(W.l) inequalities\n")
-        println("iter    objective    method   ||p||   dimA  dimJ2     α       max weight    working set")
-        @printf "   %d  %.8e   %s   %.3e   %d     %d   %.3e   %.4e    %s\n"  nb_iter dot(iter.rx,iter.rx) method norm(iter.p) iter.dimA iter.dimJ2 iter.α maximum(iter.w) s_act
+        println("Starting point : $(iter.x)\n")
+        println("Number of equality constraints   : $(W.q)\nNumber of inequality constraints : $(W.l)\n")
+        println("iter    objective    cx_sum   method   ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
+        @printf "   %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx,iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     elseif nb_iter < 10
-        @printf "   %d  %.8e   %s   %.3e   %d     %d   %.3e   %.4e    %s\n"  nb_iter dot(iter.rx,iter.rx) method norm(iter.p) iter.dimA iter.dimJ2 iter.α maximum(iter.w) s_act
+        @printf "   %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx,iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     elseif nb_iter >= 10 && nb_iter < 100
-        @printf "  %d  %.8e   %s   %.3e   %d     %d   %.3e   %.4e    %s\n"  nb_iter dot(iter.rx,iter.rx) method norm(iter.p) iter.dimA iter.dimJ2 iter.α maximum(iter.w) s_act
+        @printf "  %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx,iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     end
+end
+
+function final_output!(
+    iter::Iteration,
+    W::WorkingSet,
+    exit_code::Int64,
+    nb_iter::Int64)
+
+    @printf "\nExit code = %d\nNumber of iterations = %d \n\n" exit_code nb_iter
+    print("Terminated at point :")
+    (t -> @printf " %e " t).(iter.x)
+    print("\n\nActive constraints :")
+    (i -> @printf " %d " i).(W.active[1:W.t])
+    println("\nConstraint values : ")
+    (t -> @printf " %.2e " t).(iter.cx)
+    println("\n\nPenalty constants :")
+    (t -> @printf " %.2e " t).(iter.w)
+
+    @printf "\n\nSquare sum of residuals = %e\n" dot(iter.rx,iter.rx)
 end
 
 ##### ENLSIP 0.2.0 #####
@@ -2054,7 +2247,7 @@ end
 enlsip_020 = ENLSIP([0.0],0.0)
 
 function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
-        n::Int64,m::Int64,q::Int64,l::Int64)
+        n::Int64,m::Int64,q::Int64,l::Int64,weight_code::Int64 = 2)
 
 
     ε_float = eps(Float64)
@@ -2062,8 +2255,9 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     ε_rel = sqrt(ε_float)
     ε_x = sqrt(ε_float)
     ε_c = sqrt(ε_float)
+
     MAX_ITER = 100
-    #MAX_ITER = 11
+    # MAX_ITER = 1
     nb_iteration = 0
 
     # Vector of penalty constants
@@ -2077,13 +2271,12 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     r(x0,rx,J)
     c(x0,cx,A)
 
+    # First Iteration
     first_iter = Iteration(x0,zeros(n),rx,cx,l,1.0,zeros(l),zeros(l),0,0,0,0,zeros(n),zeros(n),0.,0.,0.,false,true,false,false,0,1)
-    # println("\n******** Itération $nb_iteration ********\n")
+
     # Initialization of the working set
     working_set = init_working_set(cx, K, first_iter, q, l)
-    # println("First working set :")
-    # println("$q equalities, $l inequalities")
-    # show_working_set(working_set)
+
     first_iter.t = working_set.t
 
     # Compute jacobians at current point
@@ -2118,13 +2311,10 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     search_direction_analys!(previous_iter,first_iter,nb_iteration,x0,c,r,rx,cx,active_C.cx,first_iter.λ,rx_sum,active_cx_sum,p_gn,first_iter.d_gn,first_iter.b_gn,nrm_b1,nrm_d1,nrm_d,J,m,n,working_set,first_iter.rankA,first_iter.rankJ2,P1,Q1,L11,P2,Q2,R11,P3,Q3,R22,first_iter.add,first_iter.del)
 
     # Computation of penalty constants and steplentgh
-    α, w = compute_steplength(x0,r,rx,J,first_iter.p,c,cx,A,active_C,previous_iter.w,working_set, K,first_iter.dimA,m,first_iter.index_del,previous_iter.α,previous_iter.rankJ2,first_iter.rankJ2,first_iter.code)
+    α, w = compute_steplength(x0,r,rx,J,first_iter.p,c,cx,A,active_C,previous_iter.w,working_set, K,first_iter.dimA,m,first_iter.index_del,previous_iter.α,previous_iter.rankJ2,first_iter.rankJ2,first_iter.code,weight_code)
     first_iter.α = α
     first_iter.w = w
     x = x0 + α*first_iter.p
-
-    # show_iter(first_iter)
-    # show_working_set(working_set)
 
     # Evaluate residuals, constraints and compute jacobians at new point
 
@@ -2139,7 +2329,8 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     # Check for termination criterias at new point
     exit_code = check_termination_criteria(first_iter,previous_iter,working_set,active_C,x,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
 
-
+    # Print collected informations about the first iteration
+    output!(first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
 
     # Check for violated constraints and add it to the working set
     first_iter.add = evaluate_violated_constraints(cx,working_set)
@@ -2147,26 +2338,20 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
 
 
 
-    # println("Exit = $exit_code\n")
-
-
-
-    previous_iter = first_iter
+    previous_iter = copy(first_iter)
     first_iter.x = x
     first_iter.rx = rx
     first_iter.cx = cx
-    output(first_iter, working_set, nb_iteration)
     nb_iteration += 1
     iter = copy(first_iter)
     iter.first = false
+    iter.add = false
+    iter.del = false
 
     # Main loop for next iterations
 
     while exit_code == 0
-
-        # println("\n******** Itération $nb_iteration ********\n")
-
-        p_gn = zeros(n)
+         p_gn = zeros(n)
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
         update_working_set!(working_set, rx, A, active_C, ∇fx, J, p_gn, iter)
@@ -2188,13 +2373,10 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         search_direction_analys!(previous_iter,iter,nb_iteration,x,c,r,rx,cx,active_C.cx,iter.λ,rx_sum,active_cx_sum,p_gn,iter.d_gn,iter.b_gn,nrm_b1,nrm_d1,nrm_d,J,m,n,working_set,iter.rankA,iter.rankJ2,P1,Q1,L11,P2,Q2,R11,P3,Q3,R22,iter.add,iter.del)
 
         # Computation of penalty constants and steplentgh
-        α, w = compute_steplength(x,r,rx,J,iter.p,c,cx,A,active_C,previous_iter.w,working_set, K,iter.dimA,m,iter.index_del,previous_iter.α,previous_iter.rankJ2,iter.rankJ2,iter.code)
+        α, w = compute_steplength(x,r,rx,J,iter.p,c,cx,A,active_C,previous_iter.w,working_set, K,iter.dimA,m,iter.index_del,previous_iter.α,previous_iter.rankJ2,iter.rankJ2,iter.code,weight_code)
         iter.α = α
         iter.w = w
         x = x + α * iter.p
-
-        # Print some informations about the newly finished iteration
-        # show_iter(iter)
 
         # Evaluate residuals, constraints and compute jacobians at new point
         r.ctrl = 1
@@ -2206,31 +2388,28 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         ∇fx = transpose(J) * rx
 
         # Check for termination criterias at new point
-        exit_code = check_termination_criteria(iter,previous_iter,working_set,active_C,x,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
+        exit_code = check_termination_criteria(iter,previous_iter,working_set,active_C,iter.x,cx,rx_sum,∇fx,n,MAX_ITER,nb_iteration,ε_abs,ε_rel,ε_x,ε_c)
+
+        # Print collected informations about current iteration
+        if exit_code == 0 output!(iter,working_set,nb_iteration, previous_iter.β, active_cx_sum) end
 
         # Check for violated constraints and add it to the working set
         iter.add = evaluate_violated_constraints(cx,working_set)
         active_C = Constraint(cx[working_set.active[1:working_set.t]], A[working_set.active[1:working_set.t],:])
-        # println("Working set at the end of iteration :")
-        # show_working_set(working_set)
-
-        # println("\nExit = $exit_code\n")
 
 
-        previous_iter = iter
+
+        nb_iteration += 1
+        previous_iter = copy(iter)
         iter.x = x
         iter.rx = rx
         iter.cx = cx
-        output(iter,working_set,nb_iteration)
-        nb_iteration += 1
-        iter = copy(iter)
         iter.del = false
         iter.add = false
-
     end
-    println("\nExit code = $exit_code")
+    final_output!(iter,working_set,exit_code,nb_iteration-1)
     enlsip_020.sol = iter.x
     enlsip_020.obj_value = dot(rx,rx)
-    @printf "Objective value = %.9e\n" enlsip_020.obj_value
+
     return
 end
