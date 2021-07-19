@@ -145,7 +145,7 @@ function new_point!(x::Vector,
                     J::Matrix,
                     A::Matrix,
                     n::Int64,
-    m::Int64,
+                    m::Int64,
                     l::Int64)
     r.ctrl = 2
     r(x, rx, J)
@@ -170,16 +170,15 @@ end
 
 function sub_search_direction(
         J1::Matrix,
-        J2::Matrix,
         rx::Vector,
         cx::Vector,
-        Q1,
+        Q1::Matrix,
         P1::Matrix,
         L11::Matrix,
-        Q2,
+        Q2::Matrix,
         P2::Matrix,
         R11::Matrix,
-        Q3,
+        Q3::Matrix,
         R22::Matrix,
         P3::Matrix,
         n::Int64,
@@ -220,14 +219,13 @@ end
 # dimA and dimJ2 are equal to the rank of the corresponding matrices
 
 function gn_search_direction(
-    A::Matrix,
     J::Matrix,
     rx::Vector,
     cx::Vector,
-    Q1,
+    Q1::Matrix,
     P1::Matrix,
     L11::Matrix,
-    Q2,
+    Q2::Matrix,
     P2::Matrix,
     R11::Matrix,
     rankA::Int64,
@@ -240,9 +238,9 @@ function gn_search_direction(
     JQ1 = J * Q1
     J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
     F_J2 = qr(J2, Val(true))
-    Q3, P3, R22 = F_J2.Q, F_J2.P, F_J2.R
+    Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
     rankJ2 = pseudo_rank(diag(R22), τ)
-    p_gn, b_gn, d_gn = sub_search_direction(J1, J2, rx, cx, Q1, P1, L11, Q2, P2, R11, Q3, R22, P3, n, t, rankA, rankA, rankJ2, code)
+    p_gn, b_gn, d_gn = sub_search_direction(J1, rx, cx, Q1, P1, L11, Q2, P2, R11, Q3, R22, P3, n, t, rankA, rankA, rankJ2, code)
     current_iter.rankA = rankA
     current_iter.rankJ2 = rankJ2
     current_iter.dimA = rankA
@@ -372,10 +370,10 @@ function newton_search_direction(
     λ::Vector,
     rx::Vector,
     J::Matrix,
-    Q1,
+    Q1::Matrix,
     P1::Matrix,
     L11::Matrix,
-    Q2,
+    Q2::Matrix,
     R11::Matrix,
     P2::Matrix,
     rankA::Int64)
@@ -615,6 +613,7 @@ function update_working_set!(
     first_lagrange_mult_estimate!(C.A, λ, ∇fx, C.cx)
     s = check_constraint_deletion(W.q, C.A, λ, ∇fx)
 
+    (m,n) = size(J)
     # Constraint number s is deleted from the current working set
     if s != 0
         # Save s-th element of cx,λ and row s of A to test for feasible direction
@@ -629,12 +628,12 @@ function update_working_set!(
         iter_k.index_del = index_s
         C.A = C.A[setdiff(1:end, s),:]
         F_A = qr(transpose(C.A), Val(true))
-        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
+        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
-        R11, Q2, P2 = F_L11.R, F_L11.Q, F_L11.P
+        R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
 
-        p_gn[:] = gn_search_direction(C.A, J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+        p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
 
         # Test for feasible direction
         As_p = (rankA <= W.t ? 0.0 : dot(A_s, p_gn))
@@ -649,11 +648,11 @@ function update_working_set!(
             iter_k.del = false
             C.A = A[W.active[1:W.t],:]
             F_A = qr(transpose(C.A), Val(true))
-            L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
+            L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
-            R11, Q2, P2 = F_L11.R, F_L11.Q, F_L11.P
-            p_gn[:] = gn_search_direction(C.A, J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+            R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+            p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
                 second_lagrange_mult_estimate!(C.A, J, Q1, λ, rx, p_gn, W.t)
                 s2 = check_constraint_deletion(W.q, C.A, λ, ∇fx)
@@ -666,22 +665,22 @@ function update_working_set!(
                     iter_k.index_del = index_s2
                     C.A = C.A[setdiff(1:end, s2),:]
                     F_A = qr(transpose(C.A), Val(true))
-                    L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
+                    L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
-                    R11, Q2, P2 = F_L11.R, F_L11.Q, F_L11.P
-                    p_gn[:] = gn_search_direction(C.A, J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+                    R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+                    p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
                 end
             end
         end
     # No first order estimate implies deletion of a constraint
     elseif s == 0
         F_A = qr(transpose(C.A), Val(true))
-        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
+        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
-        R11, Q2, P2 = F_L11.R, F_L11.Q, F_L11.P
-        p_gn[:] = gn_search_direction(C.A, J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+        R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+        p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
         if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
             second_lagrange_mult_estimate!(C.A, J, Q1, λ, rx, p_gn, W.t)
             s2 = check_constraint_deletion(W.q, C.A, λ, ∇fx)
@@ -694,11 +693,11 @@ function update_working_set!(
                 iter_k.index_del = index_s2
                 C.A = C.A[setdiff(1:end, s2),:]
                 F_A = qr(transpose(C.A), Val(true))
-                L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
+                L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
-                R11, Q2, P2 = F_L11.R, F_L11.Q, F_L11.P
-                p_gn[:] = gn_search_direction(C.A, J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+                R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+                p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
             end
         end
     end
@@ -966,20 +965,16 @@ function choose_subspace_dimensions(
         rx::Vector,
         active_cx_sum::Float64,
         J1::Matrix,
-        m::Int64,
-        n::Int64,
         t::Int64,
         rankJ2::Int64,
         rankA::Int64,
         b::Vector,
-        Q1,
         R11::Matrix,
         P2::Matrix,
-        Q3,
-        P3::Matrix,
+        Q3::Matrix,
         R22::Matrix,
         previous_iter::Iteration,
-        restart::Bool=false)
+        restart::Bool)
 
     # Data
     c1, c2, α_low = 0.1, 0.01, 0.2
@@ -1055,13 +1050,13 @@ function search_direction_analys!(
         rankA::Int64,
         rankJ2::Int64,
         P1::Matrix,
-        Q1,
+        Q1::Matrix,
         L11::Matrix,
         P2::Matrix,
-        Q2,
+        Q2::Matrix,
         R11::Matrix,
         P3::Matrix,
-        Q3,
+        Q3::Matrix,
         R22::Matrix,
         constraint_added::Bool,
         constraint_deleted::Bool,
@@ -1086,8 +1081,8 @@ function search_direction_analys!(
         JQ1 = J * Q1
         J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
         b = -transpose(Q2) * transpose(P1) * active_cx
-        dimA, dimJ2 = choose_subspace_dimensions(rx_sum, rx, active_cx_sum, J1, m, n, working_set.t, rankJ2, rankA, b, Q1, R11, P2, Q3, P3, R22, previous_iter, restart)
-        p, b, d = sub_search_direction(J1, J2, rx, active_cx, Q1, P1, L11, Q2, P2, R11, Q3, R22, P3, n, working_set.t, rankA, dimA, dimJ2, method_code)
+        dimA, dimJ2 = choose_subspace_dimensions(rx_sum,rx,active_cx_sum,J1,working_set.t,rankJ2,rankA,b,R11,P2,Q3,R22,previous_iter,restart)
+        p, b, d = sub_search_direction(J1, rx, active_cx, Q1, P1, L11, Q2, P2, R11, Q3, R22, P3, n, working_set.t, rankA, dimA, dimJ2, method_code)
 
 
 
@@ -2197,19 +2192,21 @@ function final_output!(
     iter::Iteration,
     W::WorkingSet,
     exit_code::Int64,
-    nb_iter::Int64)
+    nb_iter::Int64,
+    func_evals::Int64)
 
-    @printf "\nExit code = %d\nNumber of iterations = %d \n\n" exit_code nb_iter
+    @printf "\nExit code = %d\nNumber of iterations = %d \n" exit_code nb_iter
+    @printf "Function evaluations = %d\n\n" func_evals
     print("Terminated at point :")
     (t -> @printf " %e " t).(iter.x)
     print("\n\nActive constraints :")
     (i -> @printf " %d " i).(W.active[1:W.t])
     println("\nConstraint values : ")
     (t -> @printf " %.2e " t).(iter.cx)
-    println("\n\nPenalty constants :")
+    println("\nPenalty constants :")
     (t -> @printf " %.2e " t).(iter.w)
 
-    @printf "\n\nSquare sum of residuals = %e\n" dot(iter.rx, iter.rx)
+    @printf "\nSquare sum of residuals = %e\n" dot(iter.rx, iter.rx)
 end
 
 ##### ENLSIP 0.2.0 #####
@@ -2234,6 +2231,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     MAX_ITER = 100
     # MAX_ITER = 1
     nb_iteration = 0
+    nb_eval = 0
 
     # Vector of penalty constants
     K = [zeros(l) for i = 1:4]
@@ -2245,6 +2243,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     c.ctrl = 1
     r(x0, rx, J)
     c(x0, cx, A)
+    nb_eval += 1
     # First Iteration
     first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0., 0., 0., false, true, false, false, 0, 1)
 
@@ -2271,12 +2270,12 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     first_iter.t = working_set.t
     previous_iter = copy(first_iter)
     F_A = qr(transpose(active_C.A), Val(true))
-    L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
+    L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
     F_L = qr(L11, Val(true))
-    R11, Q2, P2 = F_L.R, F_L.Q, F_L.P
+    R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
     J2 = (J * Q1)[:,first_iter.rankA + 1:end]
     F_J2 = qr(J2, Val(true))
-    Q3, P3, R22 = F_J2.Q, F_J2.P, F_J2.R
+    Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
     nrm_b1 = norm(first_iter.b_gn[1:first_iter.dimA])
     nrm_d1 = norm(first_iter.d_gn[1:first_iter.dimJ2])
     nrm_d = norm(first_iter.d_gn)
@@ -2333,12 +2332,12 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         active_cx_sum = dot(active_C.cx, active_C.cx)
         iter.t = working_set.t
         F_A = qr(transpose(active_C.A), Val(true))
-        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
+        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
         F_L = qr(L11, Val(true))
-        R11, Q2, P2 = F_L.R, F_L.Q, F_L.P
+        R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
         J2 = (J * Q1)[:,iter.rankA + 1:end]
         F_J2 = qr(J2, Val(true))
-        Q3, P3, R22 = F_J2.Q, F_J2.P, F_J2.R
+        Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
         nrm_b1 = norm(iter.b_gn[1:iter.dimA])
         nrm_d1 = norm(iter.d_gn[1:iter.dimJ2])
         nrm_d = norm(iter.d_gn)
@@ -2365,7 +2364,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, n, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
         
         # Print collected informations about current iteration
-        exit_code == 0 ? output!(iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(previous_iter, working_set, exit_code, nb_iteration)
+        exit_code == 0 ? output!(iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(previous_iter, working_set, exit_code, nb_iteration,r.func_eval)
 
         # Check for violated constraints and add it to the working set
     iter.add = evaluate_violated_constraints(cx, working_set)
