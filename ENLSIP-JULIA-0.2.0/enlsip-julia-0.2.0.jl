@@ -2414,10 +2414,6 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         iter.add = false
     end
 
-    println("K :")
-    for j = 1:l
-        println(K[:,j])
-    end
     enlsip_020.sol = iter.x
     enlsip_020.obj_value = dot(rx, rx)
 
