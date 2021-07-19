@@ -34,31 +34,6 @@ end
 
 Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code)
 
-function show_iter(step::Iteration)
-    if step.code == 2
-        phase = "Newton"
-    elseif step.code == -1
-        phase = "Subspace Minimization"
-    elseif step.code == 1
-        phase = "Gauss-Newton"
-    end
-
-    println("\nMéthode : $phase")
-    println("Departure point : $(step.x)")
-    println("Search direction : $(step.p)")
-    println("Lagrange multipliers : $(step.λ)")
-    if step.index_del != 0
-        println("Constraint $(step.index_del) deleted from active set")
-    end
-    println("Penalty weights : $(step.w)")
-    println("Steplength : $(step.α)")
-    println("Next point : $(step.x + step.α * step.p)")
-    println("dimA = $(step.dimA); dimJ2 = $(step.dimJ2)")
-    println("rankA = $(step.rankA); rankJ2 = $(step.rankJ2)")
-    # println("b = $(step.b_gn); d = $(step.d_gn)")
-    println("\n")
-end
-
 
 # Reprensents the useful informations about constraints at a point x, i.e. :
 # cx : constraint function evaluation
@@ -89,14 +64,6 @@ mutable struct WorkingSet
     active::Vector{Int64}
     inactive::Vector{Int64}
 end
-
-function show_working_set(w::WorkingSet)
-    s1 = (w.t != 0 ? "active : $(w.active[1:w.t])\n" : "No constraints in working set\n")
-    s2 = "inactive : $(w.inactive[1:w.l - w.t])\n"
-    s = string(s1, s2)
-    println(s)
-end
-
 
 # Computes and returns the rank of a triangular matrix T using its diagonal elements placed in decreasing order
 # according to their absolute value
@@ -418,15 +385,15 @@ function newton_search_direction(
         p1 = LowerTriangular(L11) \ b
      elseif t > rankA
         b = -transpose(Q2) * transpose(P1) * active_cx
-        δp1 = UpperTriangular(R11) \ b
-        p1 = P2 * δp1
+        δp1 = UpperTriangular(R11[1:rankA,1:rankA]) \ b[1:rankA]
+        p1 = P2[1:rankA,1:rankA] * δp1
     end
 
     if rankA == n return p1 end
     
     # Computation of J1, J2
     JQ1 = J * Q1
-    J1, J2 = JQ1[:,1:t], JQ1[:,t + 1:end]
+    J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
 
     # Computation of hessian matrices
     r_mat, c_mat = zeros(n, n), zeros(n, n)
@@ -434,19 +401,18 @@ function newton_search_direction(
     hessian_res!(r, x, rx, n, m, r_mat)
     hessian_cons!(c, x, λ, active, n, l, t, c_mat)
 
-        Γ_mat = r_mat - c_mat
+    Γ_mat = r_mat - c_mat
 
     if rankA == t
         E = transpose(Q1) * Γ_mat * Q1
     elseif t > rankA
-        println("n-t = $(n - t)")
-        E = transpose([P2;zeros(n - t, t)]) * transpose(Q1) * Γ_mat * Q1 * [P2;zeros(n - t, t)]
+        Q1P2 = Q1*P2
+        E = transpose(Q1P2) * Γ_mat * Q1P2
     end
 
-
     # Forms the system to compute p2
-    E21 = E[t + 1:n, 1:t]
-    E22 = E[t + 1:n, t + 1:n]
+    E21 = E[rankA + 1:n, 1:rankA]
+    E22 = E[rankA + 1:n, rankA + 1:n]
 
     W22 = E22 + transpose(J2) * J2
     W21 = E21 + transpose(J2) * J1
@@ -728,7 +694,7 @@ function update_working_set!(
                 iter_k.index_del = index_s2
                 C.A = C.A[setdiff(1:end, s2),:]
                 F_A = qr(transpose(C.A), Val(true))
-                L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A
+                L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q, F_A.P
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
                 R11, Q2, P2 = F_L11.R, F_L11.Q, F_L11.P
@@ -782,7 +748,7 @@ function subspace_min_previous_step(
     ρ::Vector,
     ρ_prk::Float64,
     c1::Float64,
-    pseudo_rank::Int64,
+    pseudo_rk::Int64,
     previous_dimR::Int64,
     progress::Float64,
     predicted_linear_progress::Float64,
@@ -792,27 +758,25 @@ function subspace_min_previous_step(
     # Data
 
     stepb, pgb1, pgb2, predb, rlenb, c2 = 2e-1, 3e-1, 1e-1, 7e-1, 2.0, 1e2
-
-    if ((previous_α < step_τ) &&
+    if ((previous_α < stepb) &&
         (progress <= pgb1 * predicted_linear_progress^2) &&
         (progress <= pgb2 * prelin_previous_dim^2))
         
         # Bad step
         dim = max(1, previous_dimR - 1)
         if ((previous_dimR > 1) && (ρ[dim] > c1 * ρ_prk))
-            suggested_dim = dim
+            return dim
         end
+    end
 
+    dim = previous_dimR
+    if (((ρ[dim] > predb * ρ_prk) && (rlenb * τ[dim] < τ[dim + 1])) ||
+        (c2 * τ[dim] < τ[dim + 1]))
+        suggested_dim = dim
     else
-        dim = previous_dimR
-        if (((ρ[dim] > predb * ρ_prk) && (rlenb * τ[dim] < τ[dim + 1])) ||
-            (c2 * τ[dim] < τ[dim + 1]))
-            suggested_dim = dim
-        else
-            i1 = previous_dimR - 1
-            buff = [i for i = i1:previous_dimR if ρ[i] > predb * ρ_prk]
-            suggested_dim = (isempty(buff) ? pseudo_rank : min(buff))
-        end
+        i1 = previous_dimR - 1
+        buff = [i for i = i1:previous_dimR if ρ[i] > predb * ρ_prk]
+        suggested_dim = (isempty(buff) ? pseudo_rk : min(buff))
     end
     return suggested_dim
 end
@@ -930,9 +894,13 @@ function determine_solving_dim(
     previous_α::Float64,
     restart::Bool)
 
+    # Data
+    c1 = 0.1
+    c2 = 0.01
     newdim = rankR
     η = 1.0
     mindim = 1
+
     if rankR > 0
         l_estim_sd, l_estim_righthand = zeros(rankR), zeros(rankR)
         l_estim_sd[1] = abs(y[1])
@@ -1014,8 +982,8 @@ function choose_subspace_dimensions(
         restart::Bool=false)
 
     # Data
-    β1, β2, α_low = 0.1, 0.1, 0.2
-        previous_α = previous_iter.α
+    c1, c2, α_low = 0.1, 0.01, 0.2
+    previous_α = previous_iter.α
 
     if rankA <= 0
         dimA = 0
@@ -2221,7 +2189,7 @@ function output!(
     elseif nb_iter < 10
         @printf "   %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     elseif nb_iter >= 10 && nb_iter < 100
-        @printf "   %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
+        @printf "  %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     end
 end
 
@@ -2277,7 +2245,6 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     c.ctrl = 1
     r(x0, rx, J)
     c(x0, cx, A)
-
     # First Iteration
     first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0., 0., 0., false, true, false, false, 0, 1)
 
