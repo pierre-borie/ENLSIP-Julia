@@ -5,6 +5,29 @@ using LinearAlgebra, Polynomials, Printf
 
 
 # Summarizes the useful informations about an iteration of the algorithm
+# x : Departure point of the iteration 
+# p : Descent direction
+# rx : vector of size m, contains value of residuals at x 
+# cx : vector of size l, constains value of constraints at x
+# t : Number of constraints in current working set (ie constraints considered active)
+# α : Value of steplength
+# λ : Vector of size t, containts Lagrange multipliers estimates
+# rankA : pseudo rank of matrix A, jacobian of active constraints
+# rankJ2 : pseudo rank of matrix J2, block extracted from J, jacobian of residuals
+# b_gn : right handside of the linear system solved to compute first part of p
+# d_gn :  right handside of the linear system solved to compute second part of p
+# predicted_reduction : predicted linear progress
+# progress :  reduction in the objective function
+# β : scalar used to estimate convergence factor
+# restart : indicate if current iteration is a restart step or no
+# first : indicate if current iteration is the first one or no
+# add : indicate if a constraint has been added to the working set 
+# del : indicate if a constraint has been deleted from the working set
+# index_del : index of the constraint that has been deleted from working set (0 if no deletion)
+# code : Its value represents the method used to compute search direction p
+# code = 1 : Gauss-Newton method
+#       -1 : Subspace minimization
+#        2 : Newton method
 
 mutable struct Iteration
     x::Vector
@@ -35,10 +58,9 @@ end
 Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code)
 
 
-# Reprensents the useful informations about constraints at a point x, i.e. :
-# cx : constraint function evaluation
-# A : constraint jacobian evaluation
-
+# Reprensents the useful informations about active constraints at a point x, i.e. :
+# cx : Vector of size t, contains values of constraints in current working set
+# A : Matrix of size t x t, constaints jacobian of constraints in current working set
 # Used to distinguish active constraints
 
 mutable struct Constraint
@@ -51,10 +73,10 @@ end
 
 # The fields summarize infos about the qualification of the constraints, i.e. :
 # q : number of equality constraints
-# t : number of constraints considered to be active (all equalities and some inequalities)
-# l : total number of constraints (equality and inequality)
-# active : indeces of the constraints considered as active (total length : l)
-# inactive : indeces of the inequality constraints considered inactive (total length : l-t)
+# t : number of constraints in current working set (all equalities and some inequalities considered to be active at the solution)
+# l : total number of constraints (equalities and inequalities)
+# active : first t elements are indeces of constraints in working set sorted in increasing order, last ones equal 0 (total length : l)
+# inactive : first l-t elements are indeces of constraints not in working set sorted in increasing order, last ones equal 0 (total length : l-q)
 
 
 mutable struct WorkingSet
@@ -87,14 +109,13 @@ end
 
 
 # Struct used to define functions evaluating residuals, constraints and corresponding jacobians
-# Both functions for residuals and constraints must be written as follows :
+# Both functions for residuals and constraints must be written as follows and must not return values (components are modified in the body):
 # (h::EvalFunc)(x::Vector,hx::Vector,Jh::Matrix)
 
 # ctrl field control what is computed i.e. function evalutation or jacobian
-# ctrl = 1 means evaluate the function at point x, (modifies vector hx)
-# ctrl = 2 means calculate the jacobian of h(x) at point x if jacobian is supplied anatically
-#        (modifies matrix Jh)
-#        if not, ctrl is set to 0 on return and jacobian is computed numerically.
+# ctrl = 1 means evaluate the function at point x, (modifies in place vector hx)
+# ctrl = 2 means calculate the jacobian of h(x) at point x if jacobian is supplied anatically (modifies in place matrix Jh)
+#        if jacobian not supplied, ctrl is set to 0 on return and jacobian is computed numerically.
 
 abstract type EvalFunc end
 
@@ -835,17 +856,27 @@ function check_gn_direction(
     λ::Vector,
     iter_km1::Iteration)
 
+    # Data
     δ = 1e-1
     c1, c2, c3, c4, c5 = 5e-1, 1e-1, 4e0, 1e1, 5e-2
     ε_rel = eps(Float64)
     β_k = sqrt(d1nrm^2 + b1nrm^2)
 
+    # If any of the following conditions is satisfied the Gauss-Newton direction is accepted
+    # 1) The first iteration step
+    # 2) estimated convergence factor < c1
+    # 3) the real progress > c2 * predicted linear progress (provided we are not close to the solution)
     method_code = 1
-    cond1 = (iter_number == 0 || constraint_added || constraint_deleted)
-    cond2 = (β_k < c1 * iter_km1.β)
-    # TODO: add implementation of progress and predicted_reduction
-    # cond3 = ((iter_km1.progress > c2 * iter_km1.predicted_reduction) && ((dnrm <= c3 * β_k)))
-    if !(cond1 || cond2 ) # || cond3)
+    first_step = (iter_number == 0 && !restart)
+    add_or_del = (constraint_added || constraint_deleted)
+    conv_factor_lower_c1 = (β_k < c1 * iter_km1.β)
+    progress_not_close = ((iter_km1.progress > c2 * iter_km1.predicted_reduction) && ((dnrm <= c3 * β_k)))
+    if !(first_step || add_or_del || conv_factor_lower_c1 || progress_not_close)
+        # Subspace minimization is suggested if one of the following holds true
+        # 4) There is something left to reduce in subspaces 
+        # 5) Addition and/or deletion to/from current working set in the latest step
+        # 6) The nonlinearity is too sever
+
         method_code = -1
         non_linearity_k = sqrt(d1nrm * d1nrm + active_c_sum)
         non_linearity_km1 = sqrt(d1nrm_as_km1 + active_c_sum)
@@ -866,6 +897,7 @@ function check_gn_direction(
             cond7 = (iter_km1.α < c5 && non_linearity_km1 < c2 * non_linearity_k) || m == n - W.t
             cond8 = !(dnrm <= c4 * β_k)
             if cond7 || cond8
+                # Method of Newton is the only alternative
                 method_code = 2
             end
         end
@@ -895,7 +927,6 @@ function determine_solving_dim(
 
     # Data
     c1 = 0.1
-    c2 = 0.01
     newdim = rankR
     η = 1.0
     mindim = 1
@@ -1354,7 +1385,7 @@ function penalty_weight_update(
         Ap::Vector,
         K::Array{Array{Float64,1},1},
         rx::Vector,
-    rx_sum::Float64,
+        rx_sum::Float64,
         cx::Vector,
         active::Vector,
         t::Int64,
@@ -1961,6 +1992,7 @@ end
 # If search direction computed with method of Newton, an undamped step is taken (i.e. α=1)
 
 function compute_steplength(
+    iter::Iteration,
     x::Vector,
     r::ResidualsEval,
     rx::Vector,
@@ -1990,6 +2022,7 @@ function compute_steplength(
     Ap = A * p
     JpAp = vcat(Jp, Ap)
     active_Ap = active_constraint.A * p
+    active_index = work_set.active[1:work_set.t]
 
     if method_code != 2
         # Compute penalty weights and derivative of ψ at α = 0
@@ -1998,7 +2031,7 @@ function compute_steplength(
         #
         # Compute ψ(0) = 0.5 * [||r(x)||^2 +    Σ     (w_i*c_i(x)^2)]
         #                                   i ∈ active
-        ψ0 = 0.5 * (dot(rx, rx) + dot(w[work_set.active[1:work_set.t]], cx[work_set.active[1:work_set.t]].^2))
+        ψ0 = 0.5 * (dot(rx, rx) + dot(w[active_index], cx[active_index].^2))
         # check is p is a descent direction
         if dψ0 >= 0 error = -1 end
         # TODO : handle error due to ψ'(0) > 0
@@ -2015,11 +2048,26 @@ function compute_steplength(
         # Compute the steplength
         α = linesearch_constrained(x, α0, p, r, c, rx, cx, JpAp, w, m, work_set.l, work_set.t, work_set.active, work_set.inactive, ψ0, dψ0, α_low, α_upp)
 
+
+        # Compiutation of predicted linear progress
+        uppbound = min(1.0,α_upp)
+        atwa = dot(w[active_index],active_Ap.^2)
+        iter.predicted_reduction = uppbound * (-2.0 * dot(Jp,rx) - uppbound * dot(Jp,Jp) + (2.0-uppbound^2) * atwa)
+
+        # Computation of new point and actual progress
+        r.ctrl = 1
+        c.ctrl = 1
+        rx_new = zeros(m)
+        cx_new = zeros(work_set.l)
+        r(x+α*p,rx_new,J)
+        c(x+α*p,cx_new,A)
+        whsum = dot(w[active_index], cx_new[active_index].^2)
+        iter.progress = 2*ψ0 - dot(rx_new,rx_new) - whsum
+        
     else
         w = w_old
         α = 1.0
     end
-    # TODO: Computation of predicted linear progress as done in the code
     return α, w
 end
 
@@ -2179,12 +2227,12 @@ function output!(
         println("****************************************\n")
         println("Starting point : $(iter.x)\n")
         println("Number of equality constraints   : $(W.q)\nNumber of inequality constraints : $(W.l)\n")
-        println("iter    objective    cx_sum   method   ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
-        @printf "   %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
+        println("iter    objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
+        @printf "   %d  %e  %.2e   %.2e   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum iter.progress norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     elseif nb_iter < 10
-        @printf "   %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
+        @printf "   %d  %e  %.2e   %.2e   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum iter.progress norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     elseif nb_iter >= 10 && nb_iter < 100
-        @printf "  %d  %e  %.2e    %s   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum method norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
+        @printf "  %d  %e  %.2e   %.2e   %.3e   %d     %d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum iter.progress norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
     end
 end
 
@@ -2192,11 +2240,9 @@ function final_output!(
     iter::Iteration,
     W::WorkingSet,
     exit_code::Int64,
-    nb_iter::Int64,
-    func_evals::Int64)
+    nb_iter::Int64)
 
-    @printf "\nExit code = %d\nNumber of iterations = %d \n" exit_code nb_iter
-    @printf "Function evaluations = %d\n\n" func_evals
+    @printf "\nExit code = %d\nNumber of iterations = %d \n\n" exit_code nb_iter
     print("Terminated at point :")
     (t -> @printf " %e " t).(iter.x)
     print("\n\nActive constraints :")
@@ -2284,7 +2330,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     search_direction_analys!(previous_iter, first_iter, nb_iteration, x0, c, r, rx, cx, active_C.cx, first_iter.λ, rx_sum, active_cx_sum, p_gn, first_iter.d_gn, first_iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, first_iter.rankA, first_iter.rankJ2, P1, Q1, L11, P2, Q2, R11, P3, Q3, R22, first_iter.add, first_iter.del)
 
     # Computation of penalty constants and steplentgh
-    α, w = compute_steplength(x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
+    α, w = compute_steplength(first_iter,x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
     first_iter.α = α
     first_iter.w = w
     x = x0 + α * first_iter.p
@@ -2346,7 +2392,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         search_direction_analys!(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, iter.rankA, iter.rankJ2, P1, Q1, L11, P2, Q2, R11, P3, Q3, R22, iter.add, iter.del)
 
         # Computation of penalty constants and steplentgh
-        α, w = compute_steplength(x, r, rx, J, iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, iter.dimA, m, iter.index_del, previous_iter.α, previous_iter.rankJ2, iter.rankJ2, iter.code, weight_code)
+        α, w = compute_steplength(iter,x, r, rx, J, iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, iter.dimA, m, iter.index_del, previous_iter.α, previous_iter.rankJ2, iter.rankJ2, iter.code, weight_code)
         iter.α = α
         iter.w = w
         x = x + α * iter.p
@@ -2358,16 +2404,16 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         rx_sum = dot(rx, rx)
         c(x, cx, A)
         new_point!(x, r, rx, c, cx, J, A, n, m, l)
-    ∇fx = transpose(J) * rx
+        ∇fx = transpose(J) * rx
 
         # Check for termination criterias at new point
         exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, n, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
         
         # Print collected informations about current iteration
-        exit_code == 0 ? output!(iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(previous_iter, working_set, exit_code, nb_iteration,r.func_eval)
+        exit_code == 0 ? output!(iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(previous_iter, working_set, exit_code, nb_iteration)
 
         # Check for violated constraints and add it to the working set
-    iter.add = evaluate_violated_constraints(cx, working_set)
+        iter.add = evaluate_violated_constraints(cx, working_set)
         active_C = Constraint(cx[working_set.active[1:working_set.t]], A[working_set.active[1:working_set.t],:])
 
 
