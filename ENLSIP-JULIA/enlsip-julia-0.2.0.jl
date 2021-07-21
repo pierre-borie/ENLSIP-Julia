@@ -30,20 +30,20 @@ using LinearAlgebra, Polynomials, Printf
 #        2 : Newton method
 
 mutable struct Iteration
-    x::Vector
-    p::Vector
-    rx::Vector
-    cx::Vector
+    x::Vector{Float64}
+    p::Vector{Float64}
+    rx::Vector{Float64}
+    cx::Vector{Float64}
     t::Int64
     α::Float64
-    λ::Vector
-    w::Vector
+    λ::Vector{Float64}
+    w::Vector{Float64}
     rankA::Int64
     rankJ2::Int64
     dimA::Int64
     dimJ2::Int64
-    b_gn::Vector
-    d_gn::Vector
+    b_gn::Vector{Float64}
+    d_gn::Vector{Float64}
     predicted_reduction::Float64
     progress::Float64
     β::Float64
@@ -64,8 +64,8 @@ Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, 
 # Used to distinguish active constraints
 
 mutable struct Constraint
-    cx::Vector
-    A::Matrix
+    cx::Vector{Float64}
+    A::Matrix{Float64}
 end
 
 # In ENLSIP, the working-set is a prediction of the set of active constraints at the solution
@@ -93,7 +93,7 @@ end
 # diag_T is the diagonal of the Triangular matrix T whose rank is estimated
 # τ is the relative tolerance to estimate the rank
 
-function pseudo_rank(diag_T::Vector, τ::Float64=sqrt(eps(Float64)))
+function pseudo_rank(diag_T::Vector{Float64}, τ::Float64=sqrt(eps(Float64)))
     if isempty(diag_T) || abs(diag_T[1]) < τ
         r = 0
     else
@@ -110,7 +110,7 @@ end
 
 # Struct used to define functions evaluating residuals, constraints and corresponding jacobians
 # Both functions for residuals and constraints must be written as follows and must not return values (components are modified in the body):
-# (h::EvalFunc)(x::Vector,hx::Vector,Jh::Matrix)
+# (h::EvalFunc)(x::Vector{Float64}hx::Vector{Float64}Jh::Matrix)
 
 # ctrl field control what is computed i.e. function evalutation or jacobian
 # ctrl = 1 means evaluate the function at point x, (modifies in place vector hx)
@@ -131,12 +131,12 @@ end
 # Compute the (m x n) jacobian of h(x) at the current point by using forward differences
 # Result is stored in place in the matrix Jh
 function jac_forward_diff!(
-    x::Vector,
+    x::Vector{Float64},
     h::EvalFunc,
-    hx::Vector,
+    hx::Vector{Float64},
     n::Int64,
     m::Int64,
-    Jh::Matrix)
+    Jh::Matrix{Float64})
 
     δ = sqrt(eps(Float64))
 
@@ -158,13 +158,13 @@ end
 # NEWPNT
 # Compute in place the jacobians J and A corresponding to the ResidualsEvals and the constraints respectively at current point x
 
-function new_point!(x::Vector,
+function new_point!(x::Vector{Float64},
                     r::ResidualsEval,
-                    rx::Vector,
+                    rx::Vector{Float64},
                     c::ConstraintsEval,
-                    cx::Vector,
-                    J::Matrix,
-                    A::Matrix,
+                    cx::Vector{Float64},
+                    J::Matrix{Float64},
+                    A::Matrix{Float64},
                     n::Int64,
                     m::Int64,
                     l::Int64)
@@ -190,18 +190,18 @@ end
 # Computes a search direction with Gauss-Newton method using dimA and dimJ2 as subspaces dimensions
 
 function sub_search_direction(
-        J1::Matrix,
-        rx::Vector,
-        cx::Vector,
-        Q1::Matrix,
-        P1::Matrix,
-        L11::Matrix,
-        Q2::Matrix,
-        P2::Matrix,
-        R11::Matrix,
-        Q3::Matrix,
-        R22::Matrix,
-        P3::Matrix,
+        J1::Matrix{Float64},
+        rx::Vector{Float64},
+        cx::Vector{Float64},
+        Q1::Matrix{Float64},
+        P1::Matrix{Float64},
+        L11::Matrix{Float64},
+        Q2::Matrix{Float64},
+        P2::Matrix{Float64},
+        R11::Matrix{Float64},
+        Q3::Matrix{Float64},
+        R22::Matrix{Float64},
+        P3::Matrix{Float64},
         n::Int64,
         t::Int64,
         rankA::Int64,
@@ -240,15 +240,15 @@ end
 # dimA and dimJ2 are equal to the rank of the corresponding matrices
 
 function gn_search_direction(
-    J::Matrix,
-    rx::Vector,
-    cx::Vector,
-    Q1::Matrix,
-    P1::Matrix,
-    L11::Matrix,
-    Q2::Matrix,
-    P2::Matrix,
-    R11::Matrix,
+    J::Matrix{Float64},
+    rx::Vector{Float64},
+    cx::Vector{Float64},
+    Q1::Matrix{Float64},
+    P1::Matrix{Float64},
+    L11::Matrix{Float64},
+    Q2::Matrix{Float64},
+    P2::Matrix{Float64},
+    R11::Matrix{Float64},
     rankA::Int64,
     t::Int64,
     τ::Float64,
@@ -280,11 +280,11 @@ end
 
 function hessian_res!(
     r::ResidualsEval,
-    x::Vector,
-    rx::Vector,
+    x::Vector{Float64},
+    rx::Vector{Float64},
     n::Int64,
     m::Int64,
-    B::Matrix)
+    B::Matrix{Float64})
 
     # Only residuals evaluation
     r.ctrl = 1
@@ -322,13 +322,13 @@ end
 
 function hessian_cons!(
     c::ConstraintsEval,
-    x::Vector,
-    λ::Vector,
-    active::Vector,
+    x::Vector{Float64},
+    λ::Vector{Float64},
+    active::Vector{Int64},
     n::Int64,
     l::Int64,
     t::Int64,
-    B::Matrix)
+    B::Matrix{Float64})
 
     # Only constraints evaluation
     c.ctrl = 1
@@ -379,24 +379,24 @@ end
 # where G_i is the hessian of residual r_i(x)
 
 function newton_search_direction(
-    x::Vector,
+    x::Vector{Float64},
     c::ConstraintsEval,
     r::ResidualsEval,
-    active_cx::Vector,
-    active::Vector,
+    active_cx::Vector{Float64},
+    active::Vector{Int64},
     n::Int64,
     m::Int64,
     l::Int64,
     t::Int64,
-    λ::Vector,
-    rx::Vector,
-    J::Matrix,
-    Q1::Matrix,
-    P1::Matrix,
-    L11::Matrix,
-    Q2::Matrix,
-    R11::Matrix,
-    P2::Matrix,
+    λ::Vector{Float64},
+    rx::Vector{Float64},
+    J::Matrix{Float64},
+    Q1::Matrix{Float64},
+    P1::Matrix{Float64},
+    L11::Matrix{Float64},
+    Q2::Matrix{Float64},
+    R11::Matrix{Float64},
+    P2::Matrix{Float64},
     rankA::Int64)
 
     if t == rankA
@@ -459,7 +459,7 @@ end
 #                  -1
 # λ = λ_ls - (A*A^T) *cx
 
-function first_lagrange_mult_estimate!(A::Matrix, λ::Vector, ∇fx::Vector, cx::Vector)
+function first_lagrange_mult_estimate!(A::Matrix{Float64}, λ::Vector{Float64}, ∇fx::Vector{Float64}, cx::Vector{Float64})
 
 
     (t, n) = size(A)
@@ -496,12 +496,12 @@ end
 #                     T          T            T
 # Solves the system  A * λ = J(x) (r(x) + J(x) * p_gn))
 function second_lagrange_mult_estimate!(
-    A::Matrix,
-    J::Matrix,
+    A::Matrix{Float64},
+    J::Matrix{Float64},
     Q1,
-    λ::Vector,
-    rx::Vector,
-    p_gn::Vector,
+    λ::Vector{Float64},
+    rx::Vector{Float64},
+    p_gn::Vector{Float64},
     t::Int64)
 
     F = qr(transpose(A), Val(true))
@@ -560,9 +560,9 @@ end
 
 function check_constraint_deletion(
     q::Int64,
-    A::Matrix,
-    λ::Vector,
-    ∇fx::Vector)
+    A::Matrix{Float64},
+    λ::Vector{Float64},
+    ∇fx::Vector{Float64})
 
     t = length(λ)
     δ = 10
@@ -591,7 +591,7 @@ end
 # Move violated constraints to the working set
 
 function evaluate_violated_constraints(
-        cx::Vector,
+        cx::Vector{Float64},
         W::WorkingSet)
 
     # Data
@@ -620,12 +620,12 @@ end
 
 function update_working_set!(
     W::WorkingSet,
-    rx::Vector,
-    A::Matrix,
+    rx::Vector{Float64},
+    A::Matrix{Float64},
     C::Constraint,
-    ∇fx::Vector,
-    J::Matrix,
-    p_gn::Vector,
+    ∇fx::Vector{Float64},
+    J::Matrix{Float64},
+    p_gn::Vector{Float64},
     iter_k::Iteration)
 
 
@@ -729,7 +729,7 @@ end
 # INIALC
 # Compute the first working set and penalty constants
 
-function init_working_set(cx::Vector, K::Array{Array{Float64,1},1}, step::Iteration, q::Int64, l::Int64)
+function init_working_set(cx::Vector{Float64}, K::Array{Array{Float64,1},1}, step::Iteration, q::Int64, l::Int64)
     δ, ϵ, ε_rel = 0.1, 0.01, sqrt(eps(Float64))
 
     # Initialisation des pénalités
@@ -764,8 +764,8 @@ end
 # Returns dimension when previous descent direction was computed with subspace minimization
 
 function subspace_min_previous_step(
-    τ::Vector,
-    ρ::Vector,
+    τ::Vector{Float64},
+    ρ::Vector{Float64},
     ρ_prk::Float64,
     c1::Float64,
     pseudo_rk::Int64,
@@ -805,10 +805,10 @@ end
 # Returns dimension to use when previous descent direction was computed with Gauss-Newton method
 
 function gn_previous_step(
-    τ::Vector,
+    τ::Vector{Float64},
     τ_prk::Float64,
     mindim::Int64,
-    ρ::Vector,
+    ρ::Vector{Float64},
     ρ_prk::Float64,
     pseudo_rank::Int64)
 
@@ -852,8 +852,8 @@ function check_gn_direction(
     constraint_added::Bool,
     constraint_deleted::Bool,
     W::WorkingSet,
-    cx::Vector,
-    λ::Vector,
+    cx::Vector{Float64},
+    λ::Vector{Float64},
     iter_km1::Iteration)
 
     # Data
@@ -921,7 +921,7 @@ function determine_solving_dim(
     obj_progress::Float64,
     prelin_previous_dim::Float64,
     R::UpperTriangular{Float64,Array{Float64,2}},
-    y::Vector,
+    y::Vector{Float64},
     previous_α::Float64,
     restart::Bool)
 
@@ -993,17 +993,17 @@ end
 
 function choose_subspace_dimensions(
         rx_sum::Float64,
-        rx::Vector,
+        rx::Vector{Float64},
         active_cx_sum::Float64,
-        J1::Matrix,
+        J1::Matrix{Float64},
         t::Int64,
         rankJ2::Int64,
         rankA::Int64,
-        b::Vector,
-        R11::Matrix,
-        P2::Matrix,
-        Q3::Matrix,
-        R22::Matrix,
+        b::Vector{Float64},
+        R11::Matrix{Float64},
+        P2::Matrix{Float64},
+        Q3::Matrix{Float64},
+        R22::Matrix{Float64},
         previous_iter::Iteration,
         restart::Bool)
 
@@ -1059,36 +1059,36 @@ function search_direction_analys!(
         previous_iter::Iteration,
         current_iter::Iteration,
         iter_number::Int64,
-        x::Vector,
+        x::Vector{Float64},
         c::ConstraintsEval,
         r::ResidualsEval,
-        rx::Vector,
-        cx::Vector,
-        active_cx::Vector,
-        λ::Vector,
+        rx::Vector{Float64},
+        cx::Vector{Float64},
+        active_cx::Vector{Float64},
+        λ::Vector{Float64},
         rx_sum::Float64,
         active_cx_sum::Float64,
-        p_gn::Vector,
-        d_gn::Vector,
-        b_gn::Vector,
+        p_gn::Vector{Float64},
+        d_gn::Vector{Float64},
+        b_gn::Vector{Float64},
         nrm_b1_gn::Float64,
         nrm_d1_gn::Float64,
         nrm_d_gn::Float64,
-        J::Matrix,
+        J::Matrix{Float64},
         m::Int64,
         n::Int64,
         working_set::WorkingSet,
         rankA::Int64,
         rankJ2::Int64,
-        P1::Matrix,
-        Q1::Matrix,
-        L11::Matrix,
-        P2::Matrix,
-        Q2::Matrix,
-        R11::Matrix,
-        P3::Matrix,
-        Q3::Matrix,
-        R22::Matrix,
+        P1::Matrix{Float64},
+        Q1::Matrix{Float64},
+        L11::Matrix{Float64},
+        P2::Matrix{Float64},
+        Q2::Matrix{Float64},
+        R11::Matrix{Float64},
+        P3::Matrix{Float64},
+        Q3::Matrix{Float64},
+        R22::Matrix{Float64},
         constraint_added::Bool,
         constraint_deleted::Bool,
         restart::Bool=false)
@@ -1135,17 +1135,17 @@ function search_direction_analys!(
 end
 
 function psi(
-    x::Vector,
+    x::Vector{Float64},
     α::Float64,
-    p::Vector,
+    p::Vector{Float64},
     r::ResidualsEval,
     c::ConstraintsEval,
-    w::Vector,
+    w::Vector{Float64},
     m::Int64,
     l::Int64,
     t::Int64,
-    active::Vector,
-    inactive::Vector)
+    active::Vector{Int64},
+    inactive::Vector{Int64})
 
 
     r.ctrl, c.ctrl = 1, 1
@@ -1177,9 +1177,9 @@ end
 
 function assort!(
     K::Array{Array{Float64,1},1},
-    w::Vector,
+    w::Vector{Float64},
     t::Int64,
-    active::Vector)
+    active::Vector{Int64})
 
     for i in 1:t, ii in 1:4
         k = active[i]
@@ -1207,11 +1207,11 @@ end
 
 function min_norm_w!(
     ctrl::Int64,
-    w::Vector,
-    w_old::Vector,
-    y::Vector,
+    w::Vector{Float64},
+    w_old::Vector{Float64},
+    y::Vector{Float64},
     τ::Float64,
-    pos_index::Vector,
+    pos_index::Vector{Int64},
     nb_pos::Int64)
 
     w[:] = w_old
@@ -1263,14 +1263,14 @@ end
 # Update the penalty constants using the euclidean norm
 
 function euclidean_norm_weight_update!(
-    vA::Vector,
-    cx::Vector,
-    active::Vector,
+    vA::Vector{Float64},
+    cx::Vector{Float64},
+    active::Vector{Int64},
     t::Int64,
     μ::Float64,
     dimA::Int64,
-    previous_w::Vector,
-    w::Vector,
+    previous_w::Vector{Float64},
+    w::Vector{Float64},
     K::Array{Array{Float64,1},1})
 
     if t == 0
@@ -1344,8 +1344,8 @@ function max_norm_weight_update!(
         rmy::Float64,
         α_w::Float64,
         δ::Float64,
-        w::Vector,
-        active::Vector,
+        w::Vector{Float64},
+        active::Vector{Int64},
         t::Int64,
         K::Array{Array{Float64,1},1})
     μ = (abs(α_w - 1.0) <= δ ? 0.0 : rmy / nrm2_Ap)
@@ -1380,14 +1380,13 @@ end
 # where ψ(α) is approximalety minimized
 
 function penalty_weight_update(
-        w_old::Vector,
-        Jp::Vector,
-        Ap::Vector,
+        w_old::Vector{Float64},
+        Jp::Vector{Float64},
+        Ap::Vector{Float64},
         K::Array{Array{Float64,1},1},
-        rx::Vector,
-        rx_sum::Float64,
-        cx::Vector,
-        active::Vector,
+        rx::Vector{Float64},
+        cx::Vector{Float64},
+        active::Vector{Int64},
         t::Int64,
         dimA::Int64,
         norm_code::Int64)
@@ -1436,15 +1435,15 @@ end
 # CONCAT
 # Compute in place the components of vector v used for polynomial minimization
 
-function concatenate!(v::Vector,
-                      rx::Vector,
-                      cx::Vector,
-                      w::Vector,
+function concatenate!(v::Vector{Float64},
+                      rx::Vector{Float64},
+                      cx::Vector{Float64},
+                      w::Vector{Float64},
                       m::Int64,
                       t::Int64,
                       l::Int64,
-                      active::Vector,
-                      inactive::Vector)
+                      active::Vector{Int64},
+                      inactive::Vector{Int64})
 
     v[1:m] = rx[:]
     if t != 0
@@ -1466,20 +1465,20 @@ end
 # Compute in place vectors v0 and v2 so that one dimensional minimization in R^m can be done
 # Also modifies components of v1 related to constraints
 
-function coefficients_linesearch!(v0::Vector,
-                                 v1::Vector,
-                                 v2::Vector,
+function coefficients_linesearch!(v0::Vector{Float64},
+                                 v1::Vector{Float64},
+                                 v2::Vector{Float64},
                                  α_k::Float64,
-                                 rx::Vector,
-                                 cx::Vector,
-                                 rx_new::Vector,
-                                 cx_new::Vector,
-                                 w::Vector,
+                                 rx::Vector{Float64},
+                                 cx::Vector{Float64},
+                                 rx_new::Vector{Float64},
+                                 cx_new::Vector{Float64},
+                                 w::Vector{Float64},
                                  m::Int64,
                                  t::Int64,
                                  l::Int64,
-                                 active::Vector,
-                                 inactive::Vector)
+                                 active::Vector{Int64},
+                                 inactive::Vector{Int64})
 
     # Compute v0
     concatenate!(v0, rx, cx, w, m, t, l, active, inactive)
@@ -1542,9 +1541,9 @@ function minrn(x1::Float64, y1::Float64,
 
 
 function parameters_rm(
-    v0::Vector,
-    v1::Vector,
-    v2::Vector,
+    v0::Vector{Float64},
+    v1::Vector{Float64},
+    v2::Vector{Float64},
     x_min::Float64,
     ds::Polynomial{Float64},
     dds::Polynomial{Float64})
@@ -1576,7 +1575,7 @@ function parameters_rm(
 
     # s'(α) = 0 is solved using Newton-Raphson's method
     else
-α_hat = newton_raphson(x_min, Dm, ds, dds)
+        α_hat = newton_raphson(x_min, Dm, ds, dds)
     end
 
     # If only one root computed
@@ -1640,9 +1639,9 @@ end
 
 # Equivalent Fortran : MINRM in dblreduns.f
 function minrm(
-    v0::Vector,
-    v1::Vector,
-    v2::Vector,
+    v0::Vector{Float64},
+    v1::Vector{Float64},
+    v2::Vector{Float64},
     x_min::Float64,
     α_min::Float64,
     α_max::Float64)
@@ -1674,9 +1673,7 @@ end
 # end
 
 function check_reduction(
-    α::Float64,
     ψ_α::Float64,
-    α_k::Float64,
     ψ_k::Float64,
     approx_k::Float64,
     η::Float64,
@@ -1685,15 +1682,7 @@ function check_reduction(
     # Data
     δ = 0.2
 
-    # println("\nAppel de check_reduction")
-    # println("α = $α")
-    # println("α_k = $α_k")
-    # println("approx_k = $approx_k")
-    # println("ψ_α = $ψ_α")
-    # println("diff_psi = $diff_psi")
-
     if ψ_α - approx_k >= η * diff_psi
-        # println("ψ_k = $ψ_k")
         reduction_likely = !((ψ_α - ψ_k < η * diff_psi) && (ψ_k > δ * ψ_α))
     else
         reduction_likely = false
@@ -1712,17 +1701,17 @@ function goldstein_armijo_step(
     α_min::Float64,
     τ::Float64,
     p_max::Float64,
-    x::Vector,
+    x::Vector{Float64},
     α0::Float64,
-    p::Vector,
-    r::ResidualsEval ,
+    p::Vector{Float64},
+    r::ResidualsEval,
     c::ConstraintsEval,
-    w::Vector,
+    w::Vector{Float64},
     m::Int64,
     l::Int64,
     t::Int64,
-    active::Vector,
-    inactive::Vector)
+    active::Vector{Int64},
+    inactive::Vector{Int64})
 
     u = α0
     sqr_ε = sqrt(eps(Float64))
@@ -1751,20 +1740,20 @@ end
 # i correspond to constraints in current working set, j to inactive constraints
 
 function linesearch_constrained(
-    x::Vector,
+    x::Vector{Float64},
     α0::Float64,
-    p::Vector,
+    p::Vector{Float64},
     r::ResidualsEval,
     c::ConstraintsEval,
-    rx::Vector,
-    cx::Vector,
-    JpAp::Vector,
-    w::Vector,
+    rx::Vector{Float64},
+    cx::Vector{Float64},
+    JpAp::Vector{Float64},
+    w::Vector{Float64},
     m::Int64,
     l::Int64,
     t::Int64,
-    active::Vector,
-    inactive::Vector,
+    active::Vector{Int64},
+    inactive::Vector{Int64},
     ψ0::Float64,
     dψ0::Float64,
     α_low::Float64,
@@ -1841,11 +1830,7 @@ function linesearch_constrained(
     ψ_k = psi(x, α_k, p, r, c, w, m, l, t, active, inactive)
 
     # Test termination condition at α0
-    # println("diff_psi = $diff_psi")
-    # println("dψ0 = $dψ0")
-    # println("α_km1 = $α_km1")
-    # println("ψ_km1 = $ψ_km1")
-    # println("ψ0 = $ψ0")
+
     if (-diff_psi <= τ * dψ0 * α_km1) || (ψ_km1 < γ * ψ0)
         # Termination condition satisfied at α0
         # println("Armijo satisfied at α0")
@@ -1853,7 +1838,7 @@ function linesearch_constrained(
 
         # REDUCE
         # Check if essential reduction is likely
-        reduction_likely = check_reduction(α_km1, ψ_km1, α_k, ψ_k, pk, η, diff_psi)
+        reduction_likely = check_reduction(ψ_km1, ψ_k, pk, η, diff_psi)
 
         while reduction_likely
             # println("Essential reduction is likely")
@@ -1870,9 +1855,9 @@ function linesearch_constrained(
             α_k = α_kp1
             ψ_k = psi(x, α_k, p, r, c, w, m, l, t, active, inactive)
             diff_psi = ψ0 - ψ_k
-            reduction_likely = check_reduction(α_km1, ψ_km1, α_k, ψ_k, pk, η, diff_psi)
+            reduction_likely = check_reduction(ψ_km1, ψ_k, pk, η, diff_psi)
         end
-        # println("No more reduction required")
+
         # Terminate but choose the best point out of α_km1 and α_k
         if (ψ_km1 - pk >= η * diff_psi) && (ψ_k < ψ_km1)
             α_km1 = α_k
@@ -1880,14 +1865,11 @@ function linesearch_constrained(
         end
     # Termination condition not satisfied at α0
     else
-        # println("Armijo not satisfied at α0")
         diff_psi = ψ0 - ψ_k
         # Test termination condition at α1, i.e. α_k
         if (-diff_psi <= τ * dψ0 * α_k) || (ψ_k < γ * ψ0)
             # Termination condition satisfied at α1
-            # println("Armijo satisfied at α1")
             # Check if α0 is somewhat good
-            # println("Check if α0 is somewhat good")
             if ψ0 <= ψ_km1
                 x_min = α_k
                 r(x + α_k * p, rx_new, dummy)
@@ -1919,10 +1901,9 @@ function linesearch_constrained(
             ψ_k = psi(x, α_k, p, r, c, w, m, l, t, active, inactive)
 
             # Check if essential reduction is likely
-            reduction_likely = check_reduction(α_km1, ψ_km1, α_k, ψ_k, pk, η, diff_psi)
+            reduction_likely = check_reduction(ψ_km1, ψ_k, pk, η, diff_psi)
 
             while reduction_likely
-                # println("Essential reduction is likely")
                 # Value of the objective function can most likely be reduced
                 # Minimize in R^n using 3 points : α_km2, α_km1 and α_k
                 # New suggestion of the steplength is α_kp1, pk its approximated value
@@ -1936,7 +1917,7 @@ function linesearch_constrained(
                 α_k = α_kp1
                 ψ_k = psi(x, α_k, p, r, c, w, m, l, t, active, inactive)
 
-                reduction_likely = check_reduction(α_km1, ψ_km1, α_k, ψ_k, pk, η, diff_psi)
+                reduction_likely = check_reduction(ψ_km1, ψ_k, pk, η, diff_psi)
             end
             # Terminate but choose the best point out of α_km1 and α_k
             # println("No more reduction required")
@@ -1960,12 +1941,12 @@ end
 # Determine the upper bound of the steplength
 
 function upper_bound_steplength(
-        A::Matrix,
-        cx::Vector,
-        p::Vector,
-        inactive::Vector,
+        A::Matrix{Float64},
+        cx::Vector{Float64},
+        p::Vector{Float64},
+        inactive::Vector{Int64},
         t::Int64,
-                l::Int64,
+        l::Int64,
         index_del::Int64
     )
 
@@ -1993,16 +1974,16 @@ end
 
 function compute_steplength(
     iter::Iteration,
-    x::Vector,
+    x::Vector{Float64},
     r::ResidualsEval,
-    rx::Vector,
-    J::Matrix,
-    p::Vector,
+    rx::Vector{Float64},
+    J::Matrix{Float64},
+    p::Vector{Float64},
     c::ConstraintsEval,
-    cx::Vector,
-    A::Matrix,
+    cx::Vector{Float64},
+    A::Matrix{Float64},
     active_constraint::Constraint,
-    w_old::Vector,
+    w_old::Vector{Float64},
     work_set::WorkingSet,
     K::Array{Array{Float64,1},1},
     dimA::Int64,
@@ -2026,7 +2007,7 @@ function compute_steplength(
 
     if method_code != 2
         # Compute penalty weights and derivative of ψ at α = 0
-        w, dψ0 = penalty_weight_update(w_old, Jp, active_Ap, K, rx, rx_sum, cx, work_set.active, work_set.t, dimA, weight_code)
+        w, dψ0 = penalty_weight_update(w_old, Jp, active_Ap, K, rx, cx, work_set.active, work_set.t, dimA, weight_code)
 
         #
         # Compute ψ(0) = 0.5 * [||r(x)||^2 +    Σ     (w_i*c_i(x)^2)]
@@ -2114,11 +2095,10 @@ function check_termination_criteria(
     prev_iter::Iteration,
     W::WorkingSet,
     active_C::Constraint,
-    x::Vector,
-    cx::Vector,
+    x::Vector{Float64},
+    cx::Vector{Float64},
     rx_sum::Float64,
-    ∇fx::Vector,
-    n::Int64,
+    ∇fx::Vector{Float64},
     max_iter::Int64,
     nb_iter::Int64,
     ε_abs::Float64,
@@ -2264,7 +2244,7 @@ end
 
 enlsip_020 = ENLSIP([0.0], 0.0)
 
-function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
+function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::ConstraintsEval,
         n::Int64,m::Int64,q::Int64,l::Int64,weight_code::Int64=2)
 
 
@@ -2346,7 +2326,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
     ∇fx = transpose(J) * rx
 
     # Check for termination criterias at new point
-    exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum, ∇fx, n, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
+    exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
 
     # Print collected informations about the first iteration
     output!(first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
@@ -2407,7 +2387,7 @@ function (enlsip_020::ENLSIP)(x0::Vector,r::ResidualsEval,c::ConstraintsEval,
         ∇fx = transpose(J) * rx
 
         # Check for termination criterias at new point
-        exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, n, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
+        exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
         
         # Print collected informations about current iteration
         exit_code == 0 ? output!(iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(previous_iter, working_set, exit_code, nb_iteration)
