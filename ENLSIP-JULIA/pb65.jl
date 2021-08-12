@@ -1,5 +1,4 @@
-path_enlsip_file = string(pwd(),"/enlsip-julia-0.2.0.jl")
-include(path_enlsip_file)
+include("./enlsip_functions.jl")
 
 n = 3
 m = 3
