@@ -57,11 +57,14 @@ end
 
 Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code)
 
-
+# Used to distinguish active constraints
 # Reprensents the useful informations about active constraints at a point x, i.e. :
 # cx : Vector of size t, contains values of constraints in current working set
 # A : Matrix of size t x t, constaints jacobian of constraints in current working set
-# Used to distinguish active constraints
+# scaling : Boolean indicating if internal scaling of cx and A is done 
+# diag_scale : Vector of size t, contains the diagonal elements of the scaling matrix if scaling is done 
+# i.e  the i-th element equals [1 / ||∇c_i(x)||] for i = 1,...,t, which is the inverse of the length of A i-th row 
+# Otherwise, it contains the length of each row in the matrix A
 
 mutable struct Constraint
     cx::Vector{Float64}
