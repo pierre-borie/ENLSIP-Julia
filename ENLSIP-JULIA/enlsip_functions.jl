@@ -55,6 +55,7 @@ mutable struct Iteration
     code::Int64
 end
 
+
 Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code)
 
 # Used to distinguish active constraints
@@ -495,13 +496,13 @@ function first_lagrange_mult_estimate!(A::Matrix{Float64},
     ∇fx::Vector{Float64}, 
     cx::Vector{Float64},
     scaling_done::Bool,
-    diag_scale::Vector{Float64})
+    diag_scale::Vector{Float64},
+    F::Factorization{Float64})
 
 
     (t, n) = size(A)
     v = zeros(t)
     vnz = zeros(t)
-    F = qr(transpose(A), Val(true))
     prankA = pseudo_rank(diag(F.R))
     b = transpose(F.Q) * ∇fx
     v[1:prankA] = UpperTriangular(F.R[1:prankA,1:prankA]) \ b[1:prankA]
@@ -652,12 +653,40 @@ function evaluate_violated_constraints(
     return added
 end
 
+# Updates QR factorisation of A^T by appyling Givens rotations
+# Returns 
+function update_LQ_A(
+    Q::Matrix{Float64},
+    A::Matrix{Float64},
+    p::Vector{Int64},
+    j::Int64,
+    t::Int64)
+
+    # Update permutation vector and form permutation matrix
+    setdiff!(p,j)
+    p[:] = [(e > j ? e-1 : e) for e in p]
+    P = (1.0*Matrix(I,t,t))[:,p]
+    R = Q'*(A'[:,p])
+
+    # Apply Givens rotations to transform R to Upper triangular form
+
+    for i = j:t
+        G, r = givens(R[i,i],R[i+1,i],i,i+1)
+        lmul!(G,R)
+        rmul!(Q,G')
+    end
+    L = transpose(R)
+    println(diag(L[1:t,1:t]))
+    # println(maximum(map(abs,A-P*L*transpose(Q))))
+    # println("||AQ-PL|| = $(norm(A-P*L*transpose(Q)))")
+    return P, Matrix(transpose(R[1:t,1:t])), Q
+end
 
 # WRKSET
 # Estimate the lagrange multipliers and eventually delete a constraint from the working set
 # Compute the search direction using Gauss-Newton method
 
-function update_working_set!(
+function update_working_set(
     W::WorkingSet,
     rx::Vector{Float64},
     A::Matrix{Float64},
@@ -670,9 +699,9 @@ function update_working_set!(
 
     λ = Vector{Float64}(undef, W.t)
     ε_rank = sqrt(eps(Float64))
-    first_lagrange_mult_estimate!(C.A, λ, ∇fx, C.cx, C.scaling, C.diag_scale)
+    F_A = qr(transpose(C.A), Val(true))
+    first_lagrange_mult_estimate!(C.A, λ, ∇fx, C.cx, C.scaling, C.diag_scale,F_A)
     s = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale)
-
     (m,n) = size(J)
     # Constraint number s is deleted from the current working set
     if s != 0
@@ -689,8 +718,11 @@ function update_working_set!(
         iter_k.del = true
         iter_k.index_del = index_s
         C.A = C.A[setdiff(1:end, s),:]
-        F_A = qr(transpose(C.A), Val(true))
-        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+        # F_A = qr(transpose(C.A), Val(true))
+        # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+        Q1 = F_A.Q*Matrix(I,n,n)
+        vect_P1 = F_A.p[:]
+        P1, L11, Q1 = update_LQ_A(Q1,C.A,vect_P1,s,W.t)
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
         R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
@@ -710,7 +742,7 @@ function update_working_set!(
             iter_k.index_del = 0
             iter_k.del = false
             C.A = (C.scaling ? A[W.active[1:W.t],:] .* C.diag_scale : A[W.active[1:W.t],:])
-            F_A = qr(transpose(C.A), Val(true))
+            # F_A = qr(transpose(C.A), Val(true))
             L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
@@ -728,8 +760,11 @@ function update_working_set!(
                     iter_k.del = true
                     iter_k.index_del = index_s2
                     C.A = C.A[setdiff(1:end, s2),:]
-                    F_A = qr(transpose(C.A), Val(true))
-                    L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+                    # F_A = qr(transpose(C.A), Val(true))
+                    # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+                    Q1 = F_A.Q*Matrix(I,n,n)
+                    vect_P1 = F_A.p[:]
+                    P1, L11, Q1 = update_LQ_A(Q1,C.A,vect_P1,s2,W.t)
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
                     R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
@@ -739,7 +774,6 @@ function update_working_set!(
         end
     # No first order estimate implies deletion of a constraint
     elseif s == 0
-        F_A = qr(transpose(C.A), Val(true))
         L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
@@ -757,8 +791,11 @@ function update_working_set!(
                 iter_k.del = true
                 iter_k.index_del = index_s2
                 C.A = C.A[setdiff(1:end, s2),:]
-                F_A = qr(transpose(C.A), Val(true))
-                L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+                # F_A = qr(transpose(C.A), Val(true))
+                # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+                Q1 = F_A.Q*Matrix(I,n,n)
+                vect_P1 = F_A.p[:]
+                P1, L11, Q1 = update_LQ_A(Q1,C.A,vect_P1,s2,W.t)
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
                 R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
@@ -767,7 +804,7 @@ function update_working_set!(
         end
     end
     iter_k.λ = λ
-    return
+    return P1, L11, Q1
 end
 
 # INIALC
@@ -2072,8 +2109,7 @@ function compute_steplength(
         # Determine a first guess of the steplength
         magfy = (rankJ2 < prev_rankJ2 ? 6.0 : 3.0)
         α0 = min(1.0, magfy * previous_α, α_upp)
-
-        # Compute the steplength
+       # Compute the steplength
         α = linesearch_constrained(x, α0, p, r, c, rx, cx, JpAp, w, m, work_set.l, work_set.t, work_set.active, work_set.inactive, ψ0, dψ0, α_low, α_upp)
 
 
@@ -2099,12 +2135,9 @@ function compute_steplength(
     return α, w
 end
 
-
-
 # TERCRI
 # Check if any of the termination criteria are satisfied
 # There are convergence criteria and abnormal termination criteria
-
 # Convergence criteria
 # 1) ||active_c(x)|| < ε_c (for constraints in the working set)
 # 1.5) all inactive constraints must be > 0
@@ -2331,13 +2364,13 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
     # Estimation of the Lagrange multipliers
     # Computation of the Gauss-Newton search direction
     evaluate_scaling!(active_C)
-    update_working_set!(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter)
+    P1, L11, Q1 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter)
     rx_sum = dot(rx, rx)
     active_cx_sum = dot(cx[working_set.active[1:working_set.t]],cx[working_set.active[1:working_set.t]])
     first_iter.t = working_set.t
     previous_iter = copy(first_iter)
-    F_A = qr(transpose(active_C.A), Val(true))
-    L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+    # F_A = qr(transpose(active_C.A), Val(true))
+    # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
     F_L = qr(L11, Val(true))
     R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
     J2 = (J * Q1)[:,first_iter.rankA + 1:end]
@@ -2396,11 +2429,11 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
         evaluate_scaling!(active_C)
-        update_working_set!(working_set, rx, A, active_C, ∇fx, J, p_gn, iter)
+        P1, L11, Q1 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter)
         active_cx_sum = dot(cx[working_set.active[1:working_set.t]],cx[working_set.active[1:working_set.t]])
         iter.t = working_set.t
-        F_A = qr(transpose(active_C.A), Val(true))
-        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+        # F_A = qr(transpose(active_C.A), Val(true))
+        # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
         F_L = qr(L11, Val(true))
         R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
         J2 = (J * Q1)[:,iter.rankA + 1:end]
@@ -2430,7 +2463,7 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
 
         # Check for termination criterias at new point
         exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
-        
+
         # Print collected informations about current iteration
         exit_code == 0 ? output!(iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(previous_iter, working_set, exit_code, nb_iteration)
 
