@@ -1,4 +1,5 @@
-include("./enlsip_functions.jl")
+include("../src/enlsip_functions.jl")
+using BenchmarkTools
 
 n = 2
 m = 44
@@ -46,4 +47,5 @@ function (cons57::ConstraintsEval)(x::Vector{Float64},cx::Vector{Float64},A::Mat
 end
 
 x0 = [0.42, 5.0]
-enlsip_020(x0,res57,cons57,n,m,nb_eq,nb_constraints,true)
+
+enlsip(x0,res57,cons57,n,m,nb_eq,nb_constraints,true)

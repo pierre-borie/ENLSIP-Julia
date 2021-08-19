@@ -300,7 +300,7 @@ function gn_search_direction(
     current_iter.dimJ2 = rankJ2
     current_iter.b_gn = b_gn
     current_iter.d_gn = d_gn
-    return p_gn
+    return p_gn, F_J2
 
 end
 
@@ -536,19 +536,19 @@ end
 #                     T          T            T
 # Solves the system  A * λ = J(x) (r(x) + J(x) * p_gn))
 function second_lagrange_mult_estimate!(
-    A::Matrix{Float64},
     J::Matrix{Float64},
-    Q1,
+    Q1::Matrix{Float64},
+    R::Matrix{Float64},
+    P1::Matrix{Float64},
     λ::Vector{Float64},
     rx::Vector{Float64},
     p_gn::Vector{Float64},
     t::Int64)
 
-    F = qr(transpose(A), Val(true))
     J1 = (J * Q1)[:, 1:t]
     b = transpose(J1) * (rx + J * p_gn)
-    v = UpperTriangular(F.R) \ b
-    λ[:] = F.P * v
+    v = UpperTriangular(R) \ b
+    λ[:] = P1 * v
     return
 
 end
@@ -655,31 +655,31 @@ end
 
 # Updates QR factorisation of A^T by appyling Givens rotations
 # Returns 
-function update_LQ_A(
+function update_QR_A(
     Q::Matrix{Float64},
-    A::Matrix{Float64},
+    R::Matrix{Float64},
     p::Vector{Int64},
     j::Int64,
     t::Int64)
 
-    # Update permutation vector and form permutation matrix
+    # Update permutation vector, form permutation matrix, delete j-th column of matrix R 
     setdiff!(p,j)
     p[:] = [(e > j ? e-1 : e) for e in p]
     P = (1.0*Matrix(I,t,t))[:,p]
-    R = Q'*(A'[:,p])
+    R_temp = R[:,setdiff(1:end,j)]
 
     # Apply Givens rotations to transform R to Upper triangular form
 
     for i = j:t
-        G, r = givens(R[i,i],R[i+1,i],i,i+1)
-        lmul!(G,R)
+        G, r = givens(R_temp[i,i],R_temp[i+1,i],i,i+1)
+        lmul!(G,R_temp)
         rmul!(Q,G')
     end
     L = transpose(R)
-    println(diag(L[1:t,1:t]))
+    # println(diag(L[1:t,1:t]))
     # println(maximum(map(abs,A-P*L*transpose(Q))))
     # println("||AQ-PL|| = $(norm(A-P*L*transpose(Q)))")
-    return P, Matrix(transpose(R[1:t,1:t])), Q
+    return P, Matrix(transpose(R_temp[1:t,1:t])), Q
 end
 
 # WRKSET
@@ -722,12 +722,12 @@ function update_working_set(
         # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
         Q1 = F_A.Q*Matrix(I,n,n)
         vect_P1 = F_A.p[:]
-        P1, L11, Q1 = update_LQ_A(Q1,C.A,vect_P1,s,W.t)
+        P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s,W.t)
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
         R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
 
-        p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+        p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
 
         # Test for feasible direction
         As_p = (rankA <= W.t ? 0.0 : dot(A_s, p_gn))
@@ -747,9 +747,9 @@ function update_working_set(
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
             R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
-            p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+            p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
-                second_lagrange_mult_estimate!(C.A, J, Q1, λ, rx, p_gn, W.t)
+                second_lagrange_mult_estimate!(J, Q1, Matrix(L11'), P1, λ, rx, p_gn, W.t)
                 s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale)
                 if s2 != 0
                     index_s2 = W.active[s2]
@@ -764,11 +764,11 @@ function update_working_set(
                     # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
                     Q1 = F_A.Q*Matrix(I,n,n)
                     vect_P1 = F_A.p[:]
-                    P1, L11, Q1 = update_LQ_A(Q1,C.A,vect_P1,s2,W.t)
+                    P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
                     R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
-                    p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+                    p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
                 end
             end
         end
@@ -778,9 +778,9 @@ function update_working_set(
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
         R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
-        p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+        p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
         if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
-            second_lagrange_mult_estimate!(C.A, J, Q1, λ, rx, p_gn, W.t)
+            second_lagrange_mult_estimate!(J, Q1, Matrix(L11'), P1, λ, rx, p_gn, W.t)
             s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale)
             if s2 != 0
                 index_s2 = W.active[s2]
@@ -795,16 +795,16 @@ function update_working_set(
                 # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
                 Q1 = F_A.Q*Matrix(I,n,n)
                 vect_P1 = F_A.p[:]
-                P1, L11, Q1 = update_LQ_A(Q1,C.A,vect_P1,s2,W.t)
+                P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
                 R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
-                p_gn[:] = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
+                p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
             end
         end
     end
     iter_k.λ = λ
-    return P1, L11, Q1
+    return P1, L11, Q1, F_L11, F_J2
 end
 
 # INIALC
@@ -2259,6 +2259,7 @@ end
 # Print the useful informations at the end of current iteration
 
 function output!(
+    io::IOStream,
     iter::Iteration,
     W::WorkingSet,
     nb_iter::Int64,
@@ -2274,38 +2275,27 @@ function output!(
         s_act = " -"
     end
     speed = (nb_iter == 0 ? 0.0 : iter.β / β_prev)
-    if nb_iter == 0
-        println("****************************************")
-        println("*                                      *")
-        println("*          ENLSIP-JULIA-0.2.0          *")
-        println("*                                      *")
-        println("****************************************\n")
-        println("Starting point : $(iter.x)\n")
-        println("Number of equality constraints   : $(W.q)\nNumber of inequality constraints : $(W.l-W.q)\n")
-        println("iter    objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
-        @printf "   %d  %e  %.2e  %9.2e   %.3e  %2d    %2d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum iter.progress norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
-    else
-        @printf "  %2d  %e  %.2e  %9.2e   %.3e  %2d    %2d   %.2e    %.2e     %.2e    %s\n"  nb_iter dot(iter.rx, iter.rx) cx_sum iter.progress norm(iter.p) iter.dimA iter.dimJ2 iter.α speed maximum(iter.w) s_act
-    end
+    @printf(io, "  %2d  %e  %.2e  %9.2e   %.3e  %2d    %2d   %.2e    %.2e     %.2e    %s\n",  nb_iter, dot(iter.rx, iter.rx), cx_sum, iter.progress, norm(iter.p), iter.dimA, iter.dimJ2, iter.α, speed, maximum(iter.w), s_act)
 end
 
 function final_output!(
+    io::IOStream,
     iter::Iteration,
     W::WorkingSet,
     exit_code::Int64,
     nb_iter::Int64)
 
-    @printf "\nExit code = %d\nNumber of iterations = %d \n\n" exit_code nb_iter
-    print("Terminated at point :")
-    (t -> @printf " %e " t).(iter.x)
-    print("\n\nActive constraints :")
-    (i -> @printf " %d " i).(W.active[1:W.t])
-    println("\nConstraint values : ")
-    (t -> @printf " %.2e " t).(iter.cx)
-    println("\nPenalty constants :")
-    (t -> @printf " %.2e " t).(iter.w)
+    @printf(io, "\nExit code = %d\nNumber of iterations = %d \n\n", exit_code, nb_iter)
+    print(io,"Terminated at point :")
+    (t -> @printf(io," %e ", t)).(iter.x)
+    print(io,"\n\nActive constraints :")
+    (i -> @printf(io," %d ", i)).(W.active[1:W.t])
+    println(io,"\nConstraint values : ")
+    (t -> @printf(io, " %.2e ", t)).(iter.cx)
+    println(io,"\nPenalty constants :")
+    (t -> @printf(io, " %.2e ", t)).(iter.w)
 
-    @printf "\nSquare sum of residuals = %e\n" dot(iter.rx, iter.rx)
+    @printf(io, "\nSquare sum of residuals = %e\n\n", dot(iter.rx, iter.rx))
 end
 
 ##### ENLSIP 0.2.0 #####
@@ -2315,20 +2305,41 @@ mutable struct ENLSIP
     obj_value::Float64
 end
 
-enlsip_020 = ENLSIP([0.0], 0.0)
+# Main function for ENLSIP solver
+# x0 : departure point
+# r : function to evaluate residuals value and jacobian
+# c : function to evaluate constraints value and jacobian
+# n : number of parameters
+# m : number of residuals 
+# q : number of equality constraints 
+# l : total number of constraints (equalities and inequalities)
+# scaling : boolean indicating if internal scaling of constraints value and jacobian must be done or not.
+#           (default value = false)
+# weight_code : int representing the method used to compute penality weights at each iteration
+#               1 represents maximum norm method
+#               2 (default value) represents euclidean norm method  
+# MAX_ITER : int value, defines the maximum number of iterations (default value = 100)
 
-function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::ConstraintsEval,
-        n::Int64,m::Int64,q::Int64,l::Int64,scaling::Bool=false, weight_code::Int64=2)
+function enlsip(x0::Vector{Float64},
+    r::ResidualsEval,c::ConstraintsEval,
+    n::Int64,m::Int64,q::Int64,l::Int64,
+    scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100, name_output::String="output.txt")
 
-
+    io = open(name_output, "w")
+    println(io,"****************************************")
+    println(io,"*                                      *")
+    println(io,"*          ENLSIP-JULIA-0.2.0          *")
+    println(io,"*                                      *")
+    println(io,"****************************************\n")
+    println(io,"Starting point : $x0\n")
+    println(io,"Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)\n")
+    println(io,"iter    objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
     ε_float = eps(Float64)
     ε_abs = ε_float
     ε_rel = sqrt(ε_float)
     ε_x = sqrt(ε_float)
     ε_c = sqrt(ε_float)
 
-    MAX_ITER = 100
-    # MAX_ITER = 1
     nb_iteration = 0
     nb_eval = 0
 
@@ -2364,17 +2375,17 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
     # Estimation of the Lagrange multipliers
     # Computation of the Gauss-Newton search direction
     evaluate_scaling!(active_C)
-    P1, L11, Q1 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter)
+    P1, L11, Q1, F_L, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter)
     rx_sum = dot(rx, rx)
     active_cx_sum = dot(cx[working_set.active[1:working_set.t]],cx[working_set.active[1:working_set.t]])
     first_iter.t = working_set.t
     previous_iter = copy(first_iter)
     # F_A = qr(transpose(active_C.A), Val(true))
     # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
-    F_L = qr(L11, Val(true))
+    # F_L = qr(L11, Val(true))
     R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
     J2 = (J * Q1)[:,first_iter.rankA + 1:end]
-    F_J2 = qr(J2, Val(true))
+    # F_J2 = qr(J2, Val(true))
     Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
     nrm_b1 = norm(first_iter.b_gn[1:first_iter.dimA])
     nrm_d1 = norm(first_iter.d_gn[1:first_iter.dimJ2])
@@ -2403,14 +2414,12 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
     exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
 
     # Print collected informations about the first iteration
-    output!(first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
+    output!(io,first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
 
     # Check for violated constraints and add it to the working set
     first_iter.add = evaluate_violated_constraints(cx, working_set)
     active_C.cx = cx[working_set.active[1:working_set.t]]
     active_C.A = A[working_set.active[1:working_set.t],:]
-
-
 
     previous_iter = copy(first_iter)
     first_iter.x = x
@@ -2429,15 +2438,12 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
         evaluate_scaling!(active_C)
-        P1, L11, Q1 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter)
+        P1, L11, Q1, F_L, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter)
         active_cx_sum = dot(cx[working_set.active[1:working_set.t]],cx[working_set.active[1:working_set.t]])
         iter.t = working_set.t
-        # F_A = qr(transpose(active_C.A), Val(true))
-        # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
-        F_L = qr(L11, Val(true))
         R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
-        J2 = (J * Q1)[:,iter.rankA + 1:end]
-        F_J2 = qr(J2, Val(true))
+        J2 = (J * Q1)[:, iter.rankA+1:end]
+        # F_J2 = qr(J2, Val(true))
         Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
         nrm_b1 = norm(iter.b_gn[1:iter.dimA])
         nrm_d1 = norm(iter.d_gn[1:iter.dimJ2])
@@ -2465,7 +2471,7 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
         exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
 
         # Print collected informations about current iteration
-        exit_code == 0 ? output!(iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(previous_iter, working_set, exit_code, nb_iteration)
+        exit_code == 0 ? output!(io,iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(io,previous_iter, working_set, exit_code, nb_iteration)
 
         # Check for violated constraints and add it to the working set
         iter.add = evaluate_violated_constraints(cx, working_set)
@@ -2481,9 +2487,6 @@ function (enlsip_020::ENLSIP)(x0::Vector{Float64},r::ResidualsEval,c::Constraint
         iter.del = false
         iter.add = false
     end
-
-    enlsip_020.sol = iter.x
-    enlsip_020.obj_value = dot(rx, rx)
-
-    return
+    close(io)
+    return ENLSIP(iter.x, dot(rx, rx))
 end

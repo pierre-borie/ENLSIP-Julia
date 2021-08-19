@@ -1,6 +1,7 @@
 # Problem 42 from Hock-Schittkowski collection
 
-include("./enlsip_functions.jl")
+using BenchmarkTools
+include("../src/enlsip_functions.jl")
 
 n = 4
 m = 4
@@ -42,4 +43,4 @@ function (cons::ConstraintsEval)(x::Vector{Float64}, cx::Vector{Float64}, A::Mat
 end
 
 x0 = [1.0;1.0;1.0;1.0]
-enlsip_020(x0,res,cons,n,m,nb_eq,nb_constraints)
+enlsip(x0,res,cons,n,m,nb_eq,nb_constraints)
