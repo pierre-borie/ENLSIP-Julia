@@ -6,3 +6,4 @@ Source files for the Julia version of `ENLSIP` are located are located into the 
 
 Testing of the algorithm on tests problems can be found into the `tests`repository.
 
+Documentation file can be found at `docs/build/index.html`.
