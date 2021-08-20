@@ -1,33 +1,58 @@
 using LinearAlgebra, Polynomials, Printf
 
-##### FUNCTIONS FOR ENLSIP-JULIA-0.2.0 ####
-# Capital names before functions correspond to Fortran77 equivalent routine.
 
+"""
 
-# Summarizes the useful informations about an iteration of the algorithm
-# x : Departure point of the iteration 
-# p : Descent direction
-# rx : vector of size m, contains value of residuals at x 
-# cx : vector of size l, constains value of constraints at x
-# t : Number of constraints in current working set (ie constraints considered active)
-# α : Value of steplength
-# λ : Vector of size t, containts Lagrange multipliers estimates
-# rankA : pseudo rank of matrix A, jacobian of active constraints
-# rankJ2 : pseudo rank of matrix J2, block extracted from J, jacobian of residuals
-# b_gn : right handside of the linear system solved to compute first part of p
-# d_gn :  right handside of the linear system solved to compute second part of p
-# predicted_reduction : predicted linear progress
-# progress :  reduction in the objective function
-# β : scalar used to estimate convergence factor
-# restart : indicate if current iteration is a restart step or no
-# first : indicate if current iteration is the first one or no
-# add : indicate if a constraint has been added to the working set 
-# del : indicate if a constraint has been deleted from the working set
-# index_del : index of the constraint that has been deleted from working set (0 if no deletion)
-# code : Its value represents the method used to compute search direction p
-# code = 1 : Gauss-Newton method
-#       -1 : Subspace minimization
-#        2 : Newton method
+    Iteration
+
+Summarizes the useful informations about an iteration of the algorithm
+
+* `x` : Departure point of the iteration 
+
+* `p` : Descent direction
+
+* `rx` : vector of size `m`, contains value of residuals at `x` 
+
+* `cx` : vector of size `l`, constains value of constraints at `x`
+
+* `t` : Number of constraints in current working set (ie constraints considered active)
+
+* `α` : Value of steplength
+
+* `λ` : Vector of size `t`, containts Lagrange multipliers estimates
+
+* `rankA` : pseudo rank of matrix `A`, jacobian of active constraints
+
+* `rankJ2` : pseudo rank of matrix `J2`, block extracted from `J`, jacobian of residuals
+
+* `b_gn` : right handside of the linear system solved to compute first part of `p`
+
+* `d_gn` :  right handside of the linear system solved to compute second part of `p`
+
+* `predicted_reduction` : predicted linear progress
+
+* `progress` :  reduction in the objective function
+
+* `β` : scalar used to estimate convergence factor
+
+* `restart` : indicate if current iteration is a restart step or no
+
+* `first` : indicate if current iteration is the first one or no
+
+* `add` : indicate if a constraint has been added to the working set 
+
+* `del` : indicate if a constraint has been deleted from the working set
+
+* `index_del` : index of the constraint that has been deleted from working set (`0` if no deletion)
+
+* `code` : Its value caracterizes the method used to compute the search direction `p`
+
+    - ``1`` represents Gauss-Newton method
+
+    - ``-1`` represents Subspace minimization
+
+    - ``2``  represents Newton method
+"""
 
 mutable struct Iteration
     x::Vector{Float64}
@@ -138,21 +163,52 @@ end
 end
 
 
-# Struct used to define functions evaluating residuals, constraints and corresponding jacobians
-# Both functions for residuals and constraints must be written as follows and must not return values (components are modified in the body):
-# (h::EvalFunc)(x::Vector{Float64}hx::Vector{Float64}Jh::Matrix)
+"""
+    EvalFunc(ctrl::Int64) 
 
-# ctrl field control what is computed i.e. function evalutation or jacobian
-# ctrl = 1 means evaluate the function at point x, (modifies in place vector hx)
-# ctrl = 2 means calculate the jacobian of h(x) at point x if jacobian is supplied anatically (modifies in place matrix Jh)
-#        if jacobian not supplied, ctrl is set to 0 on return and jacobian is computed numerically.
+This structure is used to define functions evaluating residuals, constraints and corresponding jacobians.
 
+Both functions for residuals and constraints must be written as follows and must not return any value (components are modified in the body of the function):
+
+# Example definition of an EvalFunc type function
+
+```jldoctest
+function (h::EvalFunc)(x::Vector{Float64}, hx::Vector{Float64}, Jh::Matrix{Float64})
+    if h.ctrl == 1 
+        hx[:] = [...]
+    elseif h.ctrl == 2
+        Jh[:] = [...] # if supplied anatically
+    end
+    # The elseif block above could also be, if jacobian not supplied anatically
+    # elseif h.ctrl == 2 h.ctrl = 0 end
+    return
+end
+```
+
+The `ctrl` field indicates what is computed (i.e. evalutation or jacobian) when calling a function of type `EvalFunction`.
+
+* `ctrl` = ``1`` means the function `h` is evaluated at point `x`, (modifies in place vector `hx`)
+
+* `ctrl` = ``2`` means the jacobian of `h` is computed at point `x` if jacobian is supplied anatically (then modifies in place matrix `Jh`)
+
+* if jacobian is not supplied anatically, `ctrl` is set to ``0`` on return and jacobian is computed numerically.
+"""
 abstract type EvalFunc end
 
+"""
+    ResidualsEval <: EvalFunc
+
+Subtype of [`EvalFunc`](@ref)  dedicated to the evalutation of residuals values and jacobian matrix.
+"""
 mutable struct ResidualsEval <: EvalFunc
     ctrl::Int64
 end
 
+"""
+    ConstraintsEval <: EvalFunc
+
+Subtype of [`EvalFunc`](@ref) dedicated to the evalutation of constraints values and jacobian matrix.
+"""
 mutable struct ConstraintsEval <: EvalFunc
     ctrl::Int64
 end
@@ -718,8 +774,6 @@ function update_working_set(
         iter_k.del = true
         iter_k.index_del = index_s
         C.A = C.A[setdiff(1:end, s),:]
-        # F_A = qr(transpose(C.A), Val(true))
-        # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
         Q1 = F_A.Q*Matrix(I,n,n)
         vect_P1 = F_A.p[:]
         P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s,W.t)
@@ -742,7 +796,6 @@ function update_working_set(
             iter_k.index_del = 0
             iter_k.del = false
             C.A = (C.scaling ? A[W.active[1:W.t],:] .* C.diag_scale : A[W.active[1:W.t],:])
-            # F_A = qr(transpose(C.A), Val(true))
             L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
@@ -760,8 +813,6 @@ function update_working_set(
                     iter_k.del = true
                     iter_k.index_del = index_s2
                     C.A = C.A[setdiff(1:end, s2),:]
-                    # F_A = qr(transpose(C.A), Val(true))
-                    # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
                     Q1 = F_A.Q*Matrix(I,n,n)
                     vect_P1 = F_A.p[:]
                     P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
@@ -791,8 +842,6 @@ function update_working_set(
                 iter_k.del = true
                 iter_k.index_del = index_s2
                 C.A = C.A[setdiff(1:end, s2),:]
-                # F_A = qr(transpose(C.A), Val(true))
-                # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
                 Q1 = F_A.Q*Matrix(I,n,n)
                 vect_P1 = F_A.p[:]
                 P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
@@ -2305,34 +2354,61 @@ mutable struct ENLSIP
     obj_value::Float64
 end
 
-# Main function for ENLSIP solver
-# x0 : departure point
-# r : function to evaluate residuals value and jacobian
-# c : function to evaluate constraints value and jacobian
-# n : number of parameters
-# m : number of residuals 
-# q : number of equality constraints 
-# l : total number of constraints (equalities and inequalities)
-# scaling : boolean indicating if internal scaling of constraints value and jacobian must be done or not.
-#           (default value = false)
-# weight_code : int representing the method used to compute penality weights at each iteration
-#               1 represents maximum norm method
-#               2 (default value) represents euclidean norm method  
-# MAX_ITER : int value, defines the maximum number of iterations (default value = 100)
+"""
+    enlsip(x0, r, c, n, m, q, l, scaling = false, weight_code = 2, MAX_ITER = 100, name_output = "output")
 
+Main function for ENLSIP solver. 
+
+Must be called with the following arguments: 
+
+* `x0::Vector{Foat64}` is departure point
+
+* `r` is a function of type [`ResidualsEval`](@ref) to evaluate residuals values and jacobian
+
+* `c` is a function of type [`ConstraintsEval`] (@ref) to evaluate constraints values and jacobian
+
+* `n::Int64` is the number of parameters
+
+* `m::Int64` is the number of residuals 
+
+* `q::Int64` is the number of equality constraints 
+
+* `l::Int64` is the total number of constraints (equalities and inequalities)
+
+The following arguments are optionnal and have default values:
+
+* `scaling::Bool` is a boolean indicating if internal scaling of constraints value and jacobian must be done or not.
+    - `false` by default
+      
+* `weight_code::Int64` is an int representing the method used to compute penality weights at each iteration
+
+    - `1` represents maximum norm method
+
+    - `2` (default value) represents euclidean norm method
+          
+* `MAX_ITER::Int64` is an int defining the maximum number of iterations
+
+    - equals `100` by default
+
+* `name_output::String` is a string indicating the prefix of the `.txt` file produced at the end of the algorithm that contains informations about each iteration and termination of the algorithm
+
+    - default name given is "output"
+"""
 function enlsip(x0::Vector{Float64},
     r::ResidualsEval,c::ConstraintsEval,
     n::Int64,m::Int64,q::Int64,l::Int64,
-    scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100, name_output::String="output.txt")
+    scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100, name_output::String="output")
 
-    io = open(name_output, "w")
-    println(io,"****************************************")
+    output_file = string(name_output,".txt")
+    io = open(output_file, "w")
+    println(io,"\n****************************************")
     println(io,"*                                      *")
-    println(io,"*          ENLSIP-JULIA-0.2.0          *")
+    println(io,"*          ENLSIP-JULIA-0.3.0          *")
     println(io,"*                                      *")
     println(io,"****************************************\n")
     println(io,"Starting point : $x0\n")
-    println(io,"Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)\n")
+    println(io,"Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)")
+    println(io, "Constraints internal scaling     : $scaling\n")
     println(io,"iter    objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
     ε_float = eps(Float64)
     ε_abs = ε_float
@@ -2380,12 +2456,8 @@ function enlsip(x0::Vector{Float64},
     active_cx_sum = dot(cx[working_set.active[1:working_set.t]],cx[working_set.active[1:working_set.t]])
     first_iter.t = working_set.t
     previous_iter = copy(first_iter)
-    # F_A = qr(transpose(active_C.A), Val(true))
-    # L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
-    # F_L = qr(L11, Val(true))
     R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
     J2 = (J * Q1)[:,first_iter.rankA + 1:end]
-    # F_J2 = qr(J2, Val(true))
     Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
     nrm_b1 = norm(first_iter.b_gn[1:first_iter.dimA])
     nrm_d1 = norm(first_iter.d_gn[1:first_iter.dimJ2])
@@ -2443,7 +2515,6 @@ function enlsip(x0::Vector{Float64},
         iter.t = working_set.t
         R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
         J2 = (J * Q1)[:, iter.rankA+1:end]
-        # F_J2 = qr(J2, Val(true))
         Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
         nrm_b1 = norm(iter.b_gn[1:iter.dimA])
         nrm_d1 = norm(iter.d_gn[1:iter.dimJ2])
@@ -2487,6 +2558,11 @@ function enlsip(x0::Vector{Float64},
         iter.del = false
         iter.add = false
     end
+    # Close the IO Stream and print some collected informations
     close(io)
+    for s in readlines(output_file)
+        println(s)
+    end 
+    rm(output_file)
     return ENLSIP(iter.x, dot(rx, rx))
 end

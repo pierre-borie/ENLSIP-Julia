@@ -48,4 +48,4 @@ end
 
 x0 = [0.42, 5.0]
 
-enlsip(x0,res57,cons57,n,m,nb_eq,nb_constraints,true)
+enlsip(x0,res57,cons57,n,m,nb_eq,nb_constraints)

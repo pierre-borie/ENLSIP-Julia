@@ -44,4 +44,4 @@ function (cons65::ConstraintsEval)(x::Vector{Float64}, cx::Vector{Float64}, A::M
 end
 
 x0 = [-5.0;5.0;0.0]
-enlsip(x0,res65,cons65,n,m,nb_eq,nb_constraints,true)
+enlsip(x0,res65,cons65,n,m,nb_eq,nb_constraints)
