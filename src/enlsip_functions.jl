@@ -2354,14 +2354,15 @@ mutable struct ENLSIP
     obj_value::Float64
 end
 
+
 """
-    enlsip(x0, r, c, n, m, q, l, scaling = false, weight_code = 2, MAX_ITER = 100, name_output = "output")
+    enlsip(x0, r, c, n, m, q, l, scaling = false, weight_code = 2, MAX_ITER = 100)
 
 Main function for ENLSIP solver. 
 
 Must be called with the following arguments: 
 
-* `x0::Vector{Foat64}` is departure point
+* `x0::Vector{Foat64}` is the departure point
 
 * `r` is a function of type [`ResidualsEval`](@ref) to evaluate residuals values and jacobian
 
@@ -2377,7 +2378,10 @@ Must be called with the following arguments:
 
 The following arguments are optionnal and have default values:
 
-* `scaling::Bool` is a boolean indicating if internal scaling of constraints value and jacobian must be done or not.
+* `scaling::Bool`
+
+    -  boolean indicating if internal scaling of constraints value and jacobian must be done or not
+
     - `false` by default
       
 * `weight_code::Int64` is an int representing the method used to compute penality weights at each iteration
@@ -2386,20 +2390,24 @@ The following arguments are optionnal and have default values:
 
     - `2` (default value) represents euclidean norm method
           
-* `MAX_ITER::Int64` is an int defining the maximum number of iterations
+* `MAX_ITER::Int64`
+     
+    - int defining the maximum number of iterations
 
     - equals `100` by default
 
-* `name_output::String` is a string indicating the prefix of the `.txt` file produced at the end of the algorithm that contains informations about each iteration and termination of the algorithm
+* `name_output::String`
+
+    - string indicating the prefix of the `.txt` file produced at the end of the algorithm that contains informations about each iteration and termination of the algorithm
 
     - default name given is "output"
 """
 function enlsip(x0::Vector{Float64},
     r::ResidualsEval,c::ConstraintsEval,
     n::Int64,m::Int64,q::Int64,l::Int64,
-    scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100, name_output::String="output")
+    scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100)
 
-    output_file = string(name_output,".txt")
+    output_file = "output.txt"
     io = open(output_file, "w")
     println(io,"\n****************************************")
     println(io,"*                                      *")
