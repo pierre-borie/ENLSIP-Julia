@@ -43,4 +43,4 @@ function (cons::ConstraintsEval)(x::Vector{Float64}, cx::Vector{Float64}, A::Mat
 end
 
 x0 = [1.0;1.0;1.0;1.0]
-enlsip(x0,res,cons,n,m,nb_eq,nb_constraints)
+@time enlsip(x0,res,cons,n,m,nb_eq,nb_constraints)

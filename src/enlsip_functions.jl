@@ -1670,7 +1670,6 @@ function minrn(x1::Float64, y1::Float64,
         # Value of the estimation of ψ(α)
         pα = t1 + t2 + t3
     end
-
     return α, pα
     end
 
@@ -2274,7 +2273,7 @@ function check_termination_criteria(
             end
             # Criterion 5
             if rx_sum <= ε_abs^2
-    exit_code += 2000
+                exit_code += 2000
             end
             # Criterion 6
             if x_diff < ε_x * norm(x)
@@ -2404,7 +2403,7 @@ The following arguments are optionnal and have default values:
 """
 function enlsip(x0::Vector{Float64},
     r::ResidualsEval,c::ConstraintsEval,
-    n::Int64,m::Int64,q::Int64,l::Int64,
+    n::Int64,m::Int64,q::Int64,l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100)
 
     output_file = "output.txt"

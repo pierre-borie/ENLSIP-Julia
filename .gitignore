@@ -299,3 +299,6 @@ src/.ipynb_checkpoints/pb53-checkpoint.ipynb
 src/.vscode/settings.json
 src/.ipynb_checkpoints/pb65-checkpoint.ipynb
 output.txt
+tests/.ipynb_checkpoints/pb42-checkpoint.ipynb
+.gitignore
+tests/.ipynb_checkpoints/pb65-checkpoint.ipynb
