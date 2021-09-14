@@ -2346,7 +2346,7 @@ function final_output!(
     @printf(io, "\nSquare sum of residuals = %e\n\n", dot(iter.rx, iter.rx))
 end
 
-##### ENLSIP 0.2.0 #####
+##### ENLSIP 0.3.0 #####
 
 mutable struct ENLSIP
     sol::Vector
