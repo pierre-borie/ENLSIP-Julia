@@ -347,7 +347,9 @@ function gn_search_direction(
     JQ1 = J * Q1
     J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
     F_J2 = qr(J2, Val(true))
-    Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
+    Q3 = Matrix(F_J2.Q) 
+    # Q3 = F_J2.Q * Matrix(I,m,m)
+    P3, R22 = F_J2.P, F_J2.R
     rankJ2 = pseudo_rank(diag(R22), τ)
     p_gn, b_gn, d_gn = sub_search_direction(J1, rx, cx, Q1, P1, L11, Q2, P2, R11, Q3, R22, P3, n, t, rankA, rankA, rankJ2, code)
     current_iter.rankA = rankA
@@ -361,9 +363,9 @@ function gn_search_direction(
 end
 
 # HESSF
-#                                     m
+#                                         m
 # Compute in place the (n x n) matrix B = Σ  [r_k(x) * G_k]
-#                                    k=1
+#                                        k=1,m
 # where G_k is the hessian of residual r_k(x)
 
 function hessian_res!(
@@ -732,9 +734,6 @@ function update_QR_A(
         rmul!(Q,G')
     end
     L = transpose(R)
-    # println(diag(L[1:t,1:t]))
-    # println(maximum(map(abs,A-P*L*transpose(Q))))
-    # println("||AQ-PL|| = $(norm(A-P*L*transpose(Q)))")
     return P, Matrix(transpose(R_temp[1:t,1:t])), Q
 end
 
@@ -774,12 +773,14 @@ function update_working_set(
         iter_k.del = true
         iter_k.index_del = index_s
         C.A = C.A[setdiff(1:end, s),:]
+        # Q1 = Matrix(F_A.Q)
         Q1 = F_A.Q*Matrix(I,n,n)
         vect_P1 = F_A.p[:]
         P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s,W.t)
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
-        R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+        Q2 = Matrix(F_L11.Q)
+        R11, P2 = F_L11.R, F_L11.P
 
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
 
@@ -796,10 +797,14 @@ function update_working_set(
             iter_k.index_del = 0
             iter_k.del = false
             C.A = (C.scaling ? A[W.active[1:W.t],:] .* C.diag_scale : A[W.active[1:W.t],:])
-            L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+            # Q1 = Matrix(F_A.Q)
+            Q1 = F_A.Q * Matrix(I,n,n)
+            L11, P1 = Matrix(transpose(F_A.R)), F_A.P
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
-            R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+            Q2 = Matrix(F_L11.Q)
+            # Q2 = F_L11.Q*Matrix(I,W.t,W.t)
+            R11, P2 = F_L11.R, F_L11.P
             p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
                 second_lagrange_mult_estimate!(J, Q1, Matrix(L11'), P1, λ, rx, p_gn, W.t)
@@ -813,22 +818,29 @@ function update_working_set(
                     iter_k.del = true
                     iter_k.index_del = index_s2
                     C.A = C.A[setdiff(1:end, s2),:]
+                    # Q1 = Matrix(F_A.Q)
                     Q1 = F_A.Q*Matrix(I,n,n)
                     vect_P1 = F_A.p[:]
                     P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
-                    R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+                    Q2 = Matrix(F_L11.Q)
+                    # Q2 = F_L11.Q*Matrix(I,W.t,W.t)
+                    R11, P2 = F_L11.R, F_L11.P
                     p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
                 end
             end
         end
     # No first order estimate implies deletion of a constraint
     elseif s == 0
-        L11, Q1, P1 = Matrix(transpose(F_A.R)), F_A.Q*Matrix(I,n,n), F_A.P
+        # Q1 = Matrix(F_A.Q)
+        Q1 = F_A.Q * Matrix(I,n,n)
+        L11, P1 = Matrix(transpose(F_A.R)), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
-        R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+        Q2 = Matrix(F_L11.Q)
+        # Q2 = F_L11.Q*Matrix(I,W.t,W.t)
+        R11, P2 = F_L11.R, F_L11.P
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
         if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
             second_lagrange_mult_estimate!(J, Q1, Matrix(L11'), P1, λ, rx, p_gn, W.t)
@@ -842,12 +854,15 @@ function update_working_set(
                 iter_k.del = true
                 iter_k.index_del = index_s2
                 C.A = C.A[setdiff(1:end, s2),:]
+                # Q1 = Matrix(F_A.Q)
                 Q1 = F_A.Q*Matrix(I,n,n)
                 vect_P1 = F_A.p[:]
                 P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
-                R11, Q2, P2 = F_L11.R, F_L11.Q*Matrix(I,W.t,W.t), F_L11.P
+                Q2 = Matrix(F_L11.Q)
+                # Q2 = F_L11.Q*Matrix(I,W.t,W.t)
+                R11, P2 = F_L11.R, F_L11.P
                 p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, P1, L11, Q2, P2, R11, rankA, W.t, ε_rank, iter_k)
             end
         end
@@ -2465,7 +2480,9 @@ function enlsip(x0::Vector{Float64},
     previous_iter = copy(first_iter)
     R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
     J2 = (J * Q1)[:,first_iter.rankA + 1:end]
-    Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
+    Q3 = Matrix(F_J2.Q) 
+    # Q3 = F_J2.Q * Matrix(I,m,m)
+    P3, R22 = F_J2.P, F_J2.R
     nrm_b1 = norm(first_iter.b_gn[1:first_iter.dimA])
     nrm_d1 = norm(first_iter.d_gn[1:first_iter.dimJ2])
     nrm_d = norm(first_iter.d_gn)
@@ -2522,7 +2539,9 @@ function enlsip(x0::Vector{Float64},
         iter.t = working_set.t
         R11, Q2, P2 = F_L.R, F_L.Q*Matrix(I,working_set.t,working_set.t), F_L.P
         J2 = (J * Q1)[:, iter.rankA+1:end]
-        Q3, P3, R22 = F_J2.Q*Matrix(I,m,m), F_J2.P, F_J2.R
+        Q3 = Matrix(F_J2.Q) 
+        # Q3 = F_J2.Q * Matrix(I,m,m)
+        P3, R22 = F_J2.P, F_J2.R
         nrm_b1 = norm(iter.b_gn[1:iter.dimA])
         nrm_d1 = norm(iter.d_gn[1:iter.dimJ2])
         nrm_d = norm(iter.d_gn)
