@@ -292,9 +292,10 @@ function sub_search_direction(
         code::Int64)
 
     # Solving without stabilization
-    
+    println("[sub_search_direction] toto")
+    print("L11 = ", L11)
     if code == 1
-        b = -transpose(P1) * cx
+        b = - transpose(P1) * cx
         p1 = LowerTriangular(L11) \ b
         d = - transpose(F_J2.Q) * (J1 * p1 + rx)
         δp2 = UpperTriangular(F_J2.R[1:dimJ2,1:dimJ2]) \ d[1:dimJ2]
@@ -719,7 +720,7 @@ function update_QR_A(
     for i = j:t
         G, r = givens(R_temp[i,i],R_temp[i+1,i],i,i+1)
         lmul!(G,R_temp)
-        rmul!(Q,G')
+        rmul!(Q,transpose(G))
     end
     return P, Matrix(transpose(R_temp[1:t,1:t])), Q
 end
@@ -760,7 +761,6 @@ function update_working_set(
         iter_k.del = true
         iter_k.index_del = index_s
         C.A = C.A[setdiff(1:end, s),:]
-        # Q1 = Matrix(F_A.Q)
         Q1 = F_A.Q*Matrix(I,n,n)
         vect_P1 = F_A.p[:]
         P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s,W.t)
@@ -798,7 +798,6 @@ function update_working_set(
                     iter_k.del = true
                     iter_k.index_del = index_s2
                     C.A = C.A[setdiff(1:end, s2),:]
-                    # Q1 = Matrix(F_A.Q)
                     Q1 = F_A.Q*Matrix(I,n,n)
                     vect_P1 = F_A.p[:]
                     P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
@@ -810,7 +809,6 @@ function update_working_set(
         end
     # No first order estimate implies deletion of a constraint
     elseif s == 0
-        # Q1 = Matrix(F_A.Q)
         Q1 = F_A.Q * Matrix(I,n,n)
         L11, P1 = Matrix(transpose(F_A.R)), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
@@ -1008,12 +1006,12 @@ function check_gn_direction(
             for i = W.q+1:W.t
                 rows[i] = (scaling ? 1.0 / diag_scale[i] : diag_scale[i])
             end
-            lagrange_mult_cond = any(x -> x >= -sqr_ε, λ[W.q + 1:W.t] .* rows) && any(x -> x < 0, λ[W.q + 1:W.t])
+            lagrange_mult_cond = any(>=(-sqr_ε), λ[W.q + 1:W.t] .* rows) && any(<(0), λ[W.q + 1:W.t])
             to_reduce = (to_reduce || lagrange_mult_cond)
         end
         if (W.l - W.t > 0)
             inact_c = [cx[W.inactive[j]] for j = 1:((W.l - W.t))]
-            to_reduce = (to_reduce || any(x -> x < δ, inact_c))
+            to_reduce = (to_reduce || any(<(δ), inact_c))
              end
         cond4 = active_c_sum > c2
         cond5 = (constraint_deleted || constraint_added || to_reduce || (W.t == n && W.t == rankA))
@@ -2185,7 +2183,7 @@ end
 # Abnormal termination criterias
 # 9) number of iterations exceeds max_iter
 # 10) Convergence to a non feasible point
-# 11) 2nd derivatives not allowed by the user (TOTO (?) : not implemented yet)
+# 11) 2nd derivatives not allowed by the user (TODO (?) : not implemented yet)
 # 12) Newton step fails
 # 13) The latest direction is not a descent direction to the merit function (TODO : not implemented yet)
 
@@ -2230,7 +2228,7 @@ function check_termination_criteria(
         if W.l - W.t > 0
             inactive_index = W.inactive[1:(W.l - W.t)]
             inactive_cx = cx[inactive_index]
-            necessary_crit = necessary_crit && (all(x -> x > 0, inactive_cx))
+            necessary_crit = necessary_crit && (all(>(0), inactive_cx))
         end
 
         if W.t > W.q
