@@ -47,13 +47,14 @@ Summarizes the useful informations about an iteration of the algorithm
 
 * `code` : Its value caracterizes the method used to compute the search direction `p`
 
-    - ``1`` represents Gauss-Newton method
+    - `1` represents Gauss-Newton method
 
-    - ``-1`` represents Subspace minimization
+    - `-1` represents Subspace minimization
 
-    - ``2``  represents Newton method
+    - `2`  represents Newton method
+
+* `nb_newton_steps` : number of search direction computed using the method of Newton
 """
-
 mutable struct Iteration
     x::Vector{Float64}
     p::Vector{Float64}
@@ -78,20 +79,30 @@ mutable struct Iteration
     del::Bool
     index_del::Int64
     code::Int64
+    nb_newton_steps::Int64
 end
 
 
-Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code)
+Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code,s.nb_newton_steps)
 
-# Used to distinguish active constraints
-# Reprensents the useful informations about active constraints at a point x, i.e. :
-# cx : Vector of size t, contains values of constraints in current working set
-# A : Matrix of size t x t, constaints jacobian of constraints in current working set
-# scaling : Boolean indicating if internal scaling of cx and A is done 
-# diag_scale : Vector of size t, contains the diagonal elements of the scaling matrix if scaling is done 
-# i.e  the i-th element equals [1 / ||∇c_i(x)||] for i = 1,...,t, which is the inverse of the length of A i-th row 
-# Otherwise, it contains the length of each row in the matrix A
+"""
+    Constraint
 
+Struct used to represent the active constraints
+
+Fields are the useful informations about active constraints at a point x :
+
+* `cx` : Vector of size t, contains values of constraints in current working set
+
+* `A` : Matrix of size `t` x `t`, jacobian matrix of constraints in current working set
+
+* `scaling` : Boolean indicating if internal scaling of `cx` and `A` is done 
+
+* `diag_scale` : Vector of size `t`, contains the diagonal elements of the scaling matrix if internal scaling is done 
+
+    - The i-th element equals ``\\dfrac{1}{\\|\\nabla c_i(x)\\|}`` for ``i = 1,...,t``, which is the inverse of the length of `A` i-th row 
+    - Otherwise, it contains the length of each row in the matrix `A`
+"""
 mutable struct Constraint
     cx::Vector{Float64}
     A::Matrix{Float64}
@@ -123,17 +134,34 @@ function evaluate_scaling!(C::Constraint)
     return
 end
 
-# In ENLSIP, the working-set is a prediction of the set of active constraints at the solution
-# It is updated at every iteration thanks to a Lagrangian multipliers estimation
+"""
+    WorkingSet
 
-# Fields of the struc below summarize infos about the qualification of the constraints, i.e. :
-# q : number of equality constraints
-# t : number of constraints in current working set (all equalities and some inequalities considered to be active at the solution)
-# l : total number of constraints (equalities and inequalities)
-# active : first t elements are indeces of constraints in working set sorted in increasing order, last ones equal 0 (total length : l)
-# inactive : first l-t elements are indeces of constraints not in working set sorted in increasing order, last ones equal 0 (total length : l-q)
+In ENLSIP, the working-set is a prediction of the set of active constraints at the solution
 
+It is updated at every iteration thanks to a Lagrangian multipliers estimation
 
+Fields of this structure summarize infos about the qualification of the constraints, i.e. :
+
+* `q` : number of equality constraints
+
+* `t` : number of constraints in current working set (all equalities and some inequalities considered to be active at the solution)
+
+* `l` : total number of constraints (i.e. equalities and inequalities)
+
+* active :
+
+    - `Vector` of size `l`
+
+    - first `t` elements are indeces of constraints in working set sorted in increasing order, other elements equal `0`
+
+* inactive : 
+
+    - `Vector` of size `l-q`
+
+    - first `l-t` elements are indeces of constraints not in working set sorted in increasing order, other elements equal `0`
+
+"""
 mutable struct WorkingSet
     q::Int64
     t::Int64
@@ -241,9 +269,19 @@ function jac_forward_diff!(
     return
 end
 
-# NEWPNT
-# Compute in place the jacobians J and A corresponding to the ResidualsEvals and the constraints respectively at current point x
+"""
+    new_point!(x,r,rx,c,cx,J,A,n,m,l)
 
+Equivalent Fortran77 routine : NEWPNT
+
+Compute in place the jacobians `J` and `A` corresponding to the residuals `rx` and the constraints `cx` evaluations respectively at current point x.
+
+* `n` is the number of parameters (size of `x`)
+
+* `m` is the number of residuals (size of `rx`)
+
+* `l`is the number of constraints (size of `cx`)
+"""
 function new_point!(x::Vector{Float64},
                     r::ResidualsEval,
                     rx::Vector{Float64},
@@ -272,9 +310,67 @@ function new_point!(x::Vector{Float64},
     return
 end
 
-# SUBDIR
-# Computes a search direction with Gauss-Newton method using dimA and dimJ2 as subspaces dimensions
+"""
+    sub_search_direction(J1,rx,cx,Q1,L11,P1,F_L11,F_J2,n,t,rankA,dimA,dimJ2,code)
 
+Equivalent Fortran77 routine : SUBDIR
+
+Compute a search direction `p` by solving two triangular systems of equations.
+
+First, for `p1`, either `L11*p1 = -P1' * cx` or `R11*p1 = -Q2' * P1' * cx` is solved.
+
+Then for `p2`, `R22*p2 = -Q3^T * [J1*p1 + rx]` is solved.
+
+`[J1;J2] = J * Q1 * P2` where `J` is the jacobian matrix of residuals.
+
+Finally, the search direction is computed by forming : `p = Q1 * [p1 ; P3*p2]`
+
+# Parameters
+
+* `rx` : residuals vector of size `m`
+
+* `cx` : active constraints vector of size `t`
+
+* `Q1`, `L11`, `P1` :  components of the LQ decomposition of active constraints jacobian matrix `A*P1 = Q1 * [L11 ; 0]`
+
+    - `Q1` orthogonal `n`x`n` orthogonal matrix
+
+    - `L11` `t`x`t` lower triangular matrix
+
+    - `P1` `t`x`t` permutation matrix
+
+* `F_L11` : `QRPivoted` object containing infos about  QR decomposition of matrix `L11` such that  
+
+    - `L11 * P2 = Q2 * [R11;0]`
+
+* `F_J2` : `QRPivoted` object containing infos about  QR decomposition of matrix `J2`, last `m-rankA` columns of `J*Q1`
+
+    - `J2 * P3 = Q3 * [R22;0]`
+
+* `J1` first `rankA` columns of matrix `J*Q1`
+
+* `n` is the number of parameters
+
+* `m` is the number of residuals (size of `rx`)
+
+* `t` is the number of constraint in current working set
+
+* `rankA` : pseudo-rank of matrix `A`
+
+* `dimA` : number of columns of matrix `R11` that should be used when `R11*p1 = -Q2' * P1' * cx` is solved
+
+* `dimJ2` : number of columns of matrix `R22` that should be used when `R22*p2 = -Q3^T * [J1*p1 + rx]` is solved
+
+* `code` : interger indicating which system to solve to compute `p1`
+
+# On return
+
+* `p` : vector of size `n`, contains the computed search direction 
+
+* `b` : vector of size `t`, contains the right handside of the system solved to compute `p1`
+
+* `d` : vector of size `m`, contains the right handside of the system solved to compute `p2`
+"""
 function sub_search_direction(
         J1::Matrix{Float64},
         rx::Vector{Float64},
@@ -319,10 +415,54 @@ end
 
 
 
-# GNSRCH
-# Compute the search direction with the method of Gauss-Newton
-# dimA and dimJ2 are equal to the rank of the corresponding matrices
+"""
+    gn_search_direction(J,rx,cx,Q1,L11,P1,F_L11,rankA,t,τ,current_iter)
 
+Equivalent Fortran77 routine : GNSRCH
+
+Solves for `y` one of the compound systems :
+
+        [L11;0] * y = b   
+        J * y = -rx
+or 
+
+        [R11;0] * y = Q2' * B
+        J * y = -rx
+
+Then, compute the search direction `p = Q1 * y`
+
+If `rankA = t`, the first system is solved, otherwise, the second one is solved. 
+
+# Parameters 
+
+* `J` : `m`x`n` jacobian matrix of residuals
+
+* `rx` : residuals vector of size `m`
+
+* `cx` : active constraints vector of size `t`
+
+* `Q1`, `L11`, `P1` :  components of the LQ decomposition of active constraints jacobian matrix `A*P1 = Q1 * [L11 ; 0]`
+
+    - `Q1` orthogonal `n`x`n` orthogonal matrix
+
+    - `L11` `t`x`t` lower triangular matrix
+
+    - `P1` `t`x`t` permutation matrix
+
+* `F_L11` : `QRPivoted` object containing infos about  QR decomposition of matrix `L11` such that  
+
+    - `L11 * P2 = Q2 * [R11;0]`
+
+* `rankA` : pseudo-rank of matrix `A`
+
+* `τ` : small positive value to compute the pseudo-rank of matrices
+
+# On return
+
+* `p_gn` : vector of size `n`, contains the computed search direction 
+
+* `F_J2` : QR decomposition of Matrix `J2` defined in [`sub_search_direction`](@ref)
+"""
 function gn_search_direction(
     J::Matrix{Float64},
     rx::Vector{Float64},
@@ -371,8 +511,7 @@ function hessian_res!(
     r.ctrl = 1
     dummy = zeros(1, 1)
     # Data
-    ε1 = eps(Float64)^(1 / 3)
-
+    ε1 = eps(Float64)^(1.0 / 3.0)
     for k in 1:n, j in 1:k
         ε_k = max(abs(x[k]), 1.0) * ε1
         ε_j = max(abs(x[j]), 1.0) * ε1
@@ -478,6 +617,9 @@ function newton_search_direction(
     F_L11::Factorization,
     rankA::Int64)
 
+
+    error = false
+
     if t == rankA
         b = -P1' * active_cx
         p1 = LowerTriangular(L11) \ b
@@ -488,7 +630,7 @@ function newton_search_direction(
         p1 = F_L11.P[1:rankA,1:rankA] * δp1
     end
     if rankA == n return p1 end
-    
+ 
     # Computation of J1, J2
     JQ1 = J * Q1
     J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
@@ -524,20 +666,48 @@ function newton_search_direction(
         p = Q1 * [p1;p2]
     else
         p = zeros(n)
+        error = true
+        # throw("Erreur dans le calcul de la direction de descente par la méthode de Newton : Matrice non définie positive")
     end
-    return p
+    return p,error
 end
 
-# MULEST
-# Compute first order estimate of Lagrange multipliers
-# Solves the system A^T * λ_ls = ∇f(x) using qr factorisation of A^T
-# A^T*P1 = Q1 * (R)
-#              (0)
-# with R^T = L11
-# then computes estimates of lagrage multipliers by forming :
-#                  -1
-# λ = λ_ls - (A*A^T) *cx
+"""
+    first_lagrange_mult_estimate(A,λ,∇fx,cx,scaling_done,diag_scale,F)
 
+Equivalent Fortran77 routine : MULEST
+
+Compute first order estimate of Lagrange multipliers
+
+Solves the system `A' * λ_ls = ∇f(x)` using QR factorisation of `A'` given by :
+
+* `A'*P1 = Q1 * [R;0]`
+             
+Then, computes estimates of lagrage multipliers by forming :
+
+`λ = λ_ls - inv(A*A') * cx`
+
+# Parameters
+
+* `A` : `n`x`t` jacobian matrix of constraints in current working set 
+
+* `cx` : vector of size `t`, contains evalutations of constraints in current working set
+
+* `λ` : vector of size `t`, represent the lagrange multipliers associated to current actives contraints
+
+* `∇fx`: vector of size `n`, equals the gradient vector of the objective function
+
+* `scaling_done` : Boolean indicating if internal scaling of contraints has been done or not
+
+* `diag_scale` : Vector of size `t`, contains the diagonal elements of the scaling matrix if internal scaling is done 
+
+    - The i-th element equals ``\\dfrac{1}{\\|\\nabla c_i(x)\\|}`` for ``i = 1,...,t``, which is the inverse of the length of `A` i-th row 
+    - Otherwise, it contains the length of each row in the matrix `A`
+
+# On return 
+
+Modifies in place the vector `λ` with the first order estimate of Lagrange multipliers.
+"""
 function first_lagrange_mult_estimate!(A::Matrix{Float64}, 
     λ::Vector{Float64}, 
     ∇fx::Vector{Float64}, 
@@ -726,10 +896,39 @@ function update_QR_A(
 end
 
 
-# WRKSET
-# Estimate the lagrange multipliers and eventually delete a constraint from the working set
-# Compute the search direction using Gauss-Newton method
+"""
+Equivalent Fortran77 routine : WRKSET
 
+First, an estimate the lagrange multipliers is computed. 
+
+If there are negative values among the multipliers computed, the constraint associated to the most negative multiplier is deleted from the working set.
+
+Then, compute the search direction using Gauss-Newton method.
+
+# Parameters
+
+* `W` : represents the current working set (see [`WorkingSet`](@ref) for more details). Fields `t`, `active` and `inactive` may be modified when deleting a constraint
+
+* `rx` : vector of size `m` containing residuals evaluations
+
+* `A` : `l`x`n` jacobian matrix of constraints
+
+* `J` = `m`x`n` jacobian matrixe of residuals
+
+* `C` : represents constraints in current working set (see [`Constraint`](@ref) for more details)
+
+* `∇fx` : vector of size `n`, gradient vector of the objective function
+
+* `p_gn` : buffer vector of size `n`, represents the search direction
+
+* `iter_k` : Contains infos about the current iteration (see [`Iteration`](@ref))
+
+# On return
+
+* `P1`, `L11`, `Q1`, `F_L11` and `F_J2` : QR decompositions used to solve linear systems when computing the search direction in [`sub_search_direction`](@ref)
+
+* The fields of `iter_k` related to the computation of the search direction are modified in place 
+"""
 function update_working_set(
     W::WorkingSet,
     rx::Vector{Float64},
@@ -840,9 +1039,31 @@ function update_working_set(
     return P1, L11, Q1, F_L11, F_J2
 end
 
-# INIALC
-# Compute the first working set and penalty constants
+"""
+    init_working_set(cx,K,step,q,l)
 
+Equivalent Fortran77 routine : INIALC
+
+Compute the first working set by cheking which inequality constraints are strictly positive.
+
+Then, initialize the penalty constants.
+
+# Parameters
+
+* `cx` : vector of size `l`, contains contraints evaluations
+
+* `K` : array of vectors, contains infos about penalty constants computed throughout the algorithm
+
+* `step` : object of type [`Iteration`](@ref), containts infos about the current iteration, i.e. the first one when this function is called
+
+* `q` : number of equality constraints
+
+* `l` : total number of constraints
+
+# On return
+
+* `first_working_set` : [`WorkingSet`](@ref) object, contains infos about the first working set
+"""
 function init_working_set(cx::Vector{Float64}, K::Array{Array{Float64,1},1}, step::Iteration, q::Int64, l::Int64)
     δ, ϵ, ε_rel = 0.1, 0.01, sqrt(eps(Float64))
 
@@ -871,8 +1092,6 @@ function init_working_set(cx::Vector{Float64}, K::Array{Array{Float64,1},1}, ste
     first_working_set = WorkingSet(q, t, l, active, inactive)
     return first_working_set
 end
-
-
 
 # PRESUB
 # Returns dimension when previous descent direction was computed with subspace minimization
@@ -978,30 +1197,33 @@ function check_gn_direction(
     ε_rel = eps(Float64)
     β_k = sqrt(d1nrm^2 + b1nrm^2)
 
+    method_code = 1
+
+    # To accept the Gauss-Newton we must not have used the method of
+    # Newton before and current step must not be a restart step 
+    
+    newton_or_restart = iter_km1.code == 2 || restart
+
     # If any of the following conditions is satisfied the Gauss-Newton direction is accepted
-    # 1) The first iteration step or a restart step
+    # 1) The first iteration step
     # 2) estimated convergence factor < c1
     # 3) the real progress > c2 * predicted linear progress (provided we are not close to the solution)
-    
-    method_code = 1
-    # println("[check_gn_direction] β_k / β_km1 < c1 : ",(β_k < c1 * iter_km1.β))
-    first_restrat = (iter_number == 0 && !restart)
+
+    first_iter = (iter_number == 0)
     add_or_del = (constraint_added || constraint_deleted)
     convergence_lower_c1 = (β_k < c1 * iter_km1.β)
     progress_not_close = ((iter_km1.progress > c2 * iter_km1.predicted_reduction) && ((dnrm <= c3 * β_k)))
-    if !(first_restart || add_or_del || convergence_lower_c1 || progress_not_close)
+    if newton_or_restart || !(first_iter || add_or_del || convergence_lower_c1 || progress_not_close)
 
         # Subspace minimization is suggested if one of the following holds true
         # 4) There is something left to reduce in subspaces 
         # 5) Addition and/or deletion to/from current working set in the latest step
         # 6) The nonlinearity is too sever
-       println("[check_gn_direction] : subspace suggérée")
+
         method_code = -1
         non_linearity_k = sqrt(d1nrm * d1nrm + active_c_sum)
         non_linearity_km1 = sqrt(d1nrm_as_km1 * d1nrm_as_km1 + active_c_sum)
-        println("[check_gn_direction] ||d1_asprev|| = ",d1nrm_as_km1)
-        println("[check_gn_direction] non_linearity_k = ", non_linearity_k)
-        println("[check_gn_direction] non_linearity_km1 = ", non_linearity_km1)
+    
         to_reduce = false
         if W.q < W.t
             sqr_ε = sqrt(eps(Float64))
@@ -1015,16 +1237,20 @@ function check_gn_direction(
         if (W.l - W.t > 0)
             inact_c = [cx[W.inactive[j]] for j = 1:((W.l - W.t))]
             to_reduce = (to_reduce || any(<(δ), inact_c))
-             end
+        end
+        newton_previously = iter_km1.code == 2 && !constraint_deleted
         cond4 = active_c_sum > c2
-        cond5 = (constraint_deleted || constraint_added || to_reduce || (W.t == n && W.t == rankA))
-        ϵ = max(1e-2, 10.0 * ε_rel)
-        cond6 = (W.l == W.q) && !((β_k < ϵ * dnrm) || (b1nrm < ϵ && m == n - W.t))
 
-        if !(cond4 || cond5 || cond6)
+        cond5 = (constraint_deleted || constraint_added || to_reduce || (W.t == n && W.t == rankA))
+
+        ϵ = max(1e-2, 10.0 * ε_rel)
+        cond6 = !((W.l == W.q) || (rankA <= W.t)) && !((β_k < ϵ * dnrm) || (b1nrm < ϵ && m == n - W.t))
+
+        if newton_previously || !(cond4 || cond5 || cond6)
             cond7 = (iter_km1.α < c5 && non_linearity_km1 < c2 * non_linearity_k) || m == n - W.t
             cond8 = !(dnrm <= c4 * β_k)
-            if cond7 || cond8
+
+            if newton_previously || cond7 || cond8
                 # Method of Newton is the only alternative
                 method_code = 2
             end
@@ -1176,12 +1402,19 @@ function choose_subspace_dimensions(
     return dimA, dimJ2
 end
 
-# ANALYS
-# Check if the latest step was sufficientlt good and eventually
-# recompute the search direction by using either subspace minimization
-# or the method of Newton
+"""
+    search_direction_analys
 
-function search_direction_analys!(
+Equivalent Fortran77 routine : ANALYS
+
+
+Check if the latest step was sufficientlt good and eventually recompute the search direction by using either subspace minimization or the method of Newton
+
+# On return
+
+* `error_code` : integer indicating if there was an error if computations. In current version, errors can come from the method of Newton
+"""
+function search_direction_analys(
         previous_iter::Iteration,
         current_iter::Iteration,
         iter_number::Int64,
@@ -1220,10 +1453,9 @@ function search_direction_analys!(
 
     prev_dimJ2m1 = previous_iter.dimJ2 + previous_iter.t - working_set.t - 1
     nrm_d1_asprev = norm(d_gn[1:prev_dimJ2m1])
-    println("[search_direction_analys] d = ",d_gn)
-
+    error_code = 0
     method_code, β = check_gn_direction(nrm_b1_gn,nrm_d1_gn,nrm_d1_asprev,nrm_d_gn,active_cx_sum,iter_number,rankA,n,m,restart,constraint_added,constraint_deleted,working_set,cx,λ,previous_iter,scaling,diag_scale)
-    println("[search_direction_analys] method_code = $method_code")
+
     # Gauss-Newton accepted
     if method_code == 1
         dimA = rankA
@@ -1242,11 +1474,14 @@ function search_direction_analys!(
 
     # Search direction computed with the method of Newton
     elseif method_code == 2
-        p = newton_search_direction(x, c, r, active_cx, working_set.active, n, m, working_set.l, working_set.t, λ, rx, J, Q1, P1, L11, F_L11, rankA)
+        p, newton_error = newton_search_direction(x, c, r, active_cx, working_set.active, n, m, working_set.l, working_set.t, λ, rx, J, Q1, P1, L11, F_L11, rankA)
         b, d = b_gn, d_gn
         dimA = -working_set.t
         dimJ2 = working_set.t - n
+        current_iter.nb_newton_steps += 1
+        if newton_error error_code = -3 end
     end
+
     current_iter.b_gn = b
     current_iter.d_gn = d
     current_iter.dimA = dimA
@@ -1254,9 +1489,17 @@ function search_direction_analys!(
     current_iter.code = method_code
     current_iter.β = β
     current_iter.p = p
-    return
+    return error_code
 end
 
+
+"""
+    psi(x,α,p,r,c,w,m,l,t,active,inactive)
+
+Compute and return the evaluation of the merit function at ``(x+\\alpha p,w)`` with current working set ``\\mathcal{W}`` and the set of inactive constraints ``\\mathcal{I}``
+
+``\\psi(x,w) = \\dfrac{1}{2}\\|r(x)\\|^2 +  \\dfrac{1}{2}\\sum_{i \\in \\mathcal{W}} w_ic_i(x)^2 + \\dfrac{1}{2} \\sum_{j \\in \\mathcal{I}} w_j\\min(0,c_j(x))^2``
+"""
 function psi(
     x::Vector{Float64},
     α::Float64,
@@ -1784,11 +2027,6 @@ end
 # Returns true if essential reduction in the objective function is likely
 # Otherwise returns false
 
-# TODO: rajouter la sélection du meilleur entre α et α_k dans la fonction principale
-# if ψ_k < ψ_α
-#     α = α_k
-#     ψ_α = ψ_k
-# end
 
 function check_reduction(
     ψ_α::Float64,
@@ -2082,10 +2320,21 @@ function upper_bound_steplength(
 end
 
 
-# STPLNG
-# Update the penalty weights and compute the steplength using the merit function psi
-# If search direction computed with method of Newton, an undamped step is taken (i.e. α=1)
+"""
+    compute_steplength
 
+Equivalent Fortran77 routine : STPLNG
+
+Update the penalty weights and compute the steplength using the merit function [`psi`](@ref)
+
+If search direction computed with method of Newton, an undamped step is taken, i.e. ``\\alpha =1``
+
+# On return
+
+* `α` : the computed steplength
+
+* `w` : vector of size `l`, containts the computed penalty constants 
+"""
 function compute_steplength(
     iter::Iteration,
     x::Vector{Float64},
@@ -2166,41 +2415,78 @@ function compute_steplength(
     return α, w
 end
 
-# TERCRI
-# Check if any of the termination criteria are satisfied
-# There are convergence criteria and abnormal termination criteria
-# Convergence criteria
-# 1) ||active_c(x)|| < ε_c (for constraints in the working set)
-# 1.5) all inactive constraints must be > 0
-# 2) ||active_A^T * λ - ∇f(x)|| < sqrt(ε_rel)(1 + ||∇f(x)||)
-# 3) min λ_i >= ε_rel * max |λ_i|
-#     i                  i
-#            >= ε_rel * (1+||r(x)||^2) (if 1 inequality)
-# 4) ||d1||^2 <= ε_x * ||x||
-# 5) ||r(x)||^2 <= ε_abs^2
-# 6) ||x_previous - x|| < ε_x * ||x||
-# 7) sqrt(ε_rel) / ||p_gn|| > 0.25 (gn for Gauss-Newton)
-# 8) The last digit in the convergence code has a specific value (TODO : not implemented yet)
+function evaluation_restart!(iter::Iteration, error_code::Int64)
+    iter.restart = (error_code < 0)
+end
 
-# Abnormal termination criterias
-# 9) number of iterations exceeds max_iter
-# 10) Convergence to a non feasible point
-# 11) 2nd derivatives not allowed by the user (TODO (?) : not implemented yet)
-# 12) Newton step fails
-# 13) The latest direction is not a descent direction to the merit function (TODO : not implemented yet)
+# 
 
-# Returns exit_code, an integer containing whose value gives info about termination
-# 0 if no termination criterion is satisfied
-# 10000 if criterion 4 satisfied
-#  2000 if criterion 5 satisfied
-#   300 if criterion 6 satisfied
-#    40 if criterion 7 satisfied
-#    -2 if criterion 9 satisfied
-#    -5 if criterion 12 satisfied
-#   -10 if not possible to satisfy the constraints
+"""
+    check_termination_criteria(iter::Iteration,prev_iter::Iteration,W::WorkingSet,active_C::Constraint,x,cx,rx_sum,∇fx,max_iter,nb_iter,ε_abs,ε_rel,ε_x,ε_c,error_code)
 
-# exit_code != 0 means the termination of the algorithm
+Equivalent Fortran77 routine : `TERCRI`
 
+This functions checks if any of the termination criteria are satisfied
+
+``\\varepsilon_c,\\varepsilon_x,\\varepsilon_{rel}`` and ``\\varepsilon_{abs}`` are small positive values to test convergence.
+
+There are convergence criteria (conditions 1 to 7) and abnormal termination criteria (conditions 8 to 12)
+
+
+
+1. ``\\|c(x_k)\\| < \\varepsilon_c`` for constraints in the working set and all inactive constraints must be strictly positive
+
+2. ``\\|A_k^T \\lambda_k - \\nabla f(x_k)\\| < \\sqrt{\\varepsilon_{rel}}*(1 + \\|\\nabla f(x_k)\\|)``
+
+3. ``\\underset{i}{\\min}\\ \\lambda_k^{(i)} \\geq \\varepsilon_{rel}*\\underset{i}{\\max}\\ |\\lambda_k^{(i)}|``
+
+    - or ``\\underset{i}{\\min}\\ \\lambda_k^{(i)}  \\geq \\varepsilon_{rel}*(1+\\|r(x_k)\\|^2)`` if there is only one inequality
+
+4. ``\\|d_1\\|^2 \\leq \\varepsilon_x * \\|x_k\\|``
+
+5. ``\\|r(x_k)\\|^2 \\leq \\varepsilon_{abs}^2``
+
+6. ``\\|x_k-x_{k-1}\\| < \\varepsilon_x * \\|x_k\\|``
+
+7. ``\\dfrac{\\sqrt{\\varepsilon_{rel}}}{\\|p_k\\|}  > 0.25``
+
+8. number of iterations exceeds `MAX_ITER`
+
+9. Convergence to a non feasible point
+
+10. Second order derivatives not allowed by the user (TODO : not implemented yet)
+
+11. Newton step fails or too many Newton steps done
+
+12. The latest direction is not a descent direction to the merit function (TODO : not implemented yet)
+
+Concitions 1 to 3 are necessary conditions.
+
+This functions returns `exit_code`, an integer containing infos about the termination of the algorithm
+
+* `0` if no termination criterion is satisfied
+
+* `10000` if criterion 4 satisfied
+
+* `2000` if criterion 5 satisfied
+
+* `300` if criterion 6 satisfied
+
+* `40` if criterion 7 satisfied
+
+* `-2` if criterion 8 satisfied
+
+* `-5` if criterion 11 satisfied
+
+* `-9`  if the search direction is computed with Newton method at least five times
+
+* `-10` if not possible to satisfy the constraints
+
+
+If multiple convergence criteria are satisfied, their corresponding values are added into `exit_code`.
+
+`exit_code != 0` means the termination of the algorithm
+"""
 function check_termination_criteria(
     iter::Iteration,
     prev_iter::Iteration,
@@ -2215,7 +2501,8 @@ function check_termination_criteria(
     ε_abs::Float64,
     ε_rel::Float64,
     ε_x::Float64,
-    ε_c::Float64)
+    ε_c::Float64,
+    error_code::Int64)
 
     exit_code = 0
     alfnoi = ε_rel / (norm(iter.p) + ε_abs)
@@ -2269,7 +2556,6 @@ function check_termination_criteria(
 
         end
     end
-
     if exit_code == 0
         # Check abnormal termination criteria
         x_diff = norm(prev_iter.x - iter.x)
@@ -2277,11 +2563,19 @@ function check_termination_criteria(
         # Criterion 9
         if nb_iter >= max_iter
             exit_code = -2
+
+        # Criterion 12
+        elseif error_code == -3
+            exit_code = -5
+        # Too many Newton steps
+        elseif iter.nb_newton_steps > 5
+            exit_code = -9
+
         # test if impossible to satisfy the constraints
         elseif x_diff <= 10.0 * ε_x && Atcx_nrm <= 10.0 * ε_c
-            exit = -10
+            exit_code = -10
         end
-        # TODO : implement critera 10-12
+        # TODO : implement critera 10-11
     end
     return exit_code
 end
@@ -2338,7 +2632,7 @@ end
 
 
 """
-    enlsip(x0, r, c, n, m, q, l, scaling = false, weight_code = 2, MAX_ITER = 100)
+    enlsip(x0,r,c,n,m,q,l;scaling = false,weight_code = 2,MAX_ITER = 100,ε_abs = 1e-10,ε_rel = 1e-3,ε_x = 1e-3,ε_c = 1e-3)
 
 Main function for ENLSIP solver. 
 
@@ -2378,38 +2672,39 @@ The following arguments are optionnal and have default values:
 
     - equals `100` by default
 
-* `name_output::String`
+* `ε_abs`, `ε_rel`, `ε_x` and `ε_c`
 
-    - string indicating the prefix of the `.txt` file produced at the end of the algorithm that contains informations about each iteration and termination of the algorithm
+    - small positive scalars of type `Float64` to test convergence
 
-    - default name given is "output"
+    - default are the recommended one by the authors, i.e. 
+
+        - `ε_rel = ε_x = ε_c = 1e-3` 
+        - `ε_abs = 1e-10`
 """
 function enlsip(x0::Vector{Float64},
     r::ResidualsEval,c::ConstraintsEval,
     n::Int64,m::Int64,q::Int64,l::Int64;
-    scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100)
+    scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
+    ε_abs = 1e-10,ε_rel = 1e-3,ε_x = 1e-3,ε_c = 1e-3)
 
     output_file = "output.txt"
     io = open(output_file, "w")
     println(io,"\n****************************************")
     println(io,"*                                      *")
-    println(io,"*          ENLSIP-JULIA-0.3.0          *")
+    println(io,"*          ENLSIP-JULIA-0.4.0          *")
     println(io,"*                                      *")
     println(io,"****************************************\n")
     println(io,"Starting point : $x0\n")
     println(io,"Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)")
     println(io, "Constraints internal scaling     : $scaling\n")
     println(io,"iter    objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
-    ε_float = eps(Float64)
-    ε_abs = ε_float
-    ε_rel = sqrt(ε_float)
-    ε_x = sqrt(ε_float)
-    ε_c = sqrt(ε_float)
+
 
     nb_iteration = 0
     nb_eval = 0
-    println("Itération $nb_iteration")
 
+    # Double relative precision
+    ε_float = eps(Float64)
     # Vector of penalty constants
     K = [zeros(l) for i = 1:4]
 
@@ -2422,7 +2717,7 @@ function enlsip(x0::Vector{Float64},
     c(x0, cx, A)
     nb_eval += 1
     # First Iteration
-    first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0., 0., 0., false, true, false, false, 0, 1)
+    first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0., 0., 0., false, true, false, false, 0, 1,0)
 
     # Initialization of the working set
     working_set = init_working_set(cx, K, first_iter, q, l)
@@ -2453,7 +2748,7 @@ function enlsip(x0::Vector{Float64},
     nrm_d = norm(first_iter.d_gn)
 
     # Analys of the lastly computed search direction
-    search_direction_analys!(previous_iter,first_iter,nb_iteration,x0,c,r,rx,cx,active_C.cx,first_iter.λ,rx_sum,active_cx_sum,p_gn,first_iter.d_gn,first_iter.b_gn,nrm_b1,nrm_d1,nrm_d,J,m,n,working_set,first_iter.rankA,first_iter.rankJ2,P1,Q1,L11,F_L11,F_J2,first_iter.add,first_iter.del,active_C.scaling,active_C.diag_scale)
+    error_code = search_direction_analys(previous_iter,first_iter,nb_iteration,x0,c,r,rx,cx,active_C.cx,first_iter.λ,rx_sum,active_cx_sum,p_gn,first_iter.d_gn,first_iter.b_gn,nrm_b1,nrm_d1,nrm_d,J,m,n,working_set,first_iter.rankA,first_iter.rankJ2,P1,Q1,L11,F_L11,F_J2,first_iter.add,first_iter.del,active_C.scaling,active_C.diag_scale)
 
     # Computation of penalty constants and steplentgh
     α, w = compute_steplength(first_iter,x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
@@ -2472,7 +2767,8 @@ function enlsip(x0::Vector{Float64},
     ∇fx = transpose(J) * rx
 
     # Check for termination criterias at new point
-    exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
+    evaluation_restart!(first_iter,error_code)
+    exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c,error_code)
 
     # Print collected informations about the first iteration
     output!(io,first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
@@ -2495,7 +2791,6 @@ function enlsip(x0::Vector{Float64},
     # Main loop for next iterations
 
     while exit_code == 0
-        println("\nItération $nb_iteration")
         p_gn = zeros(n)
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
@@ -2509,7 +2804,7 @@ function enlsip(x0::Vector{Float64},
         nrm_d = norm(iter.d_gn)
 
         # Analys of the lastly computed search direction
-        search_direction_analys!(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, iter.rankA, iter.rankJ2, P1, Q1, L11, F_L11, F_J2, iter.add, iter.del,active_C.scaling,active_C.diag_scale)
+        error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, iter.rankA, iter.rankJ2, P1, Q1, L11, F_L11, F_J2, iter.add, iter.del,active_C.scaling,active_C.diag_scale,iter.restart)
 
         # Computation of penalty constants and steplentgh
         α, w = compute_steplength(iter,x,r,rx,J,iter.p,c,cx,A,active_C,previous_iter.w,working_set,K,iter.dimA,m,iter.index_del,previous_iter.α,previous_iter.rankJ2,iter.rankJ2,iter.code,weight_code)
@@ -2527,7 +2822,9 @@ function enlsip(x0::Vector{Float64},
         ∇fx = transpose(J) * rx
 
         # Check for termination criterias at new point
-        exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c)
+        evaluation_restart!(iter,error_code)
+        println("Iter $nb_iteration : restart = ",iter.restart)
+        exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c, error_code)
 
         # Print collected informations about current iteration
         exit_code == 0 ? output!(io,iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(io,previous_iter, working_set, exit_code, nb_iteration)
