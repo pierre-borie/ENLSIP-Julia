@@ -2560,6 +2560,8 @@ function check_termination_criteria(
         # Check abnormal termination criteria
         x_diff = norm(prev_iter.x - iter.x)
         Atcx_nrm = norm(transpose(active_C.A) * active_C.cx)
+       
+        active_penalty_sum = (W.t == 0 ? 0.0 : dot(iter.w[W.active[1:W.t]],iter.w[W.active[1:W.t]]))
         # Criterion 9
         if nb_iter >= max_iter
             exit_code = -2
@@ -2572,7 +2574,7 @@ function check_termination_criteria(
             exit_code = -9
 
         # test if impossible to satisfy the constraints
-        elseif x_diff <= 10.0 * ε_x && Atcx_nrm <= 10.0 * ε_c
+        elseif x_diff <= 10.0 * ε_x && Atcx_nrm <= 10.0 * ε_c && active_penalty_sum >= 1.0 
             exit_code = -10
         end
         # TODO : implement critera 10-11
@@ -2789,7 +2791,6 @@ function enlsip(x0::Vector{Float64},
     iter.del = false
 
     # Main loop for next iterations
-
     while exit_code == 0
         p_gn = zeros(n)
         # Estimation of the Lagrange multipliers
@@ -2823,7 +2824,6 @@ function enlsip(x0::Vector{Float64},
 
         # Check for termination criterias at new point
         evaluation_restart!(iter,error_code)
-        println("Iter $nb_iteration : restart = ",iter.restart)
         exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c, error_code)
 
         # Print collected informations about current iteration
