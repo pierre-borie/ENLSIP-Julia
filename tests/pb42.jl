@@ -1,6 +1,5 @@
 # Problem 42 from Hock-Schittkowski collection
 
-using BenchmarkTools
 include("../src/enlsip_functions.jl")
 
 n = 4
@@ -33,7 +32,7 @@ function (cons::ConstraintsEval)(x::Vector{Float64}, cx::Vector{Float64}, A::Mat
     # Evaluate the constraints
     if abs(cons.ctrl) == 1
         cx[:] = [x[1] - 2.0;
-                 x[3]^2 + x[4]^2 - 2.0]
+                 x[3]*x[3]+ x[4]*x[4] - 2.0]
 
     # The jacobian is computed numerically if ctrl is set to 0 on return
     elseif cons.ctrl == 2
@@ -43,4 +42,4 @@ function (cons::ConstraintsEval)(x::Vector{Float64}, cx::Vector{Float64}, A::Mat
 end
 
 x0 = [1.0;1.0;1.0;1.0]
-@time enlsip(x0,res,cons,n,m,nb_eq,nb_constraints)
+enlsip(x0,res,cons,n,m,nb_eq,nb_constraints)
