@@ -149,13 +149,13 @@ Fields of this structure summarize infos about the qualification of the constrai
 
 * `l` : total number of constraints (i.e. equalities and inequalities)
 
-* active :
+* `active` :
 
     - `Vector` of size `l`
 
     - first `t` elements are indeces of constraints in working set sorted in increasing order, other elements equal `0`
 
-* inactive : 
+* `inactive` : 
 
     - `Vector` of size `l-q`
 
