@@ -241,11 +241,15 @@ mutable struct ConstraintsEval <: EvalFunc
     ctrl::Int64
 end
 
-# JACDIF
-# Compute the (m x n) jacobian of h(x) at the current point by using forward differences
-# Result is stored in place in the matrix Jh
-function jac_forward_diff!(
-    x::Vector{Float64},
+
+"""
+    jac_forward_diff!(x,h,hx,n,m,Jh)
+
+    
+Compute the jacobian of the [`EvalFunc`](@ref) `h` at the current point  by using forward differences
+The result is stored in place in the matrix `Jh`
+"""
+function jac_forward_diff!(x::Vector{Float64},
     h::EvalFunc,
     hx::Vector{Float64},
     n::Int64,
@@ -598,6 +602,13 @@ end
 #        i=1
 # where G_i is the hessian of residual r_i(x)
 
+"""
+    newton_search_direction(x,c,r,active_cx,active,n,m,l,t,λ,rx,J,Q1,P1,L11,F_L11,rankA)
+
+``
+\\underset{p \\in \\mathbb{R}^{n}}{\\min}\\left[ \\dfrac{1}{2}p^{T}\\nabla_{xx}^{2}\\mathcal{L}(x_{k},\\lambda)p + \\nabla f(x_{k})^{T}p\\right]
+``
+"""
 function newton_search_direction(
     x::Vector{Float64},
     c::ConstraintsEval,

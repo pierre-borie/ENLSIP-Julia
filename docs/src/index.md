@@ -1,4 +1,4 @@
-# Enlsip Documentation
+# ENLSIP Documentation
 
 # Notations
 
@@ -31,5 +31,3 @@ Filter = t -> typeof(t) === DataType && t <: Enlsip.EvalFunc
 Modules = [Enlsip]
 Order   = [:function]
 ```
-
-
