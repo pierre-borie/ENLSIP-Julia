@@ -1,0 +1,47 @@
+\chapter*{Conclusion}\addcontentsline{toc}{chapter}{Conclusion}\label{Conclusion}
+\markright{Conclusion}
+
+\`A la fin de mon temps de stage, je suis parvenu à retranscrire l'algorithme ENLSIP en Julia. Ce travail s'est avéré prendre plus de temps que prévu, 
+tant l'analyse du code source écrit en Fortran77 s'est avérée de plus en plus complexe à mesure que mon travail avançait. 
+
+Les premiers tests effectués ont principalement contribué à mettre en avant la bonne retranscription en Julia 
+de l'algorithme initialement codé en Fortran77. Cette implémentation bénéficie déjà des avantages de Julia en terme d'utilisation de librairies et de meilleure 
+lisibilité du code. Néanmoins, les gains potentiels en terme de performances n'ont pas pu être évalués spécifiquement avec les tests réalisés sur des problèmes 
+en relativement petite dimension.
+
+La retranscription de l'algorithme n'étant pas complètement terminée, son accessibilité en tant que librairie Julia 
+ n'a pas encore été entamée mais fait toujours partie des objectifs finaux du projet. 
+
+Les prochains travaux seront dès lors consacrées à la mise en place de problèmes exploitant des données d'\HQ\ et faisant appel à des modèles
+d'évaluation effectivement utilisés en production. Les tests réalisés apporteront de ce fait de nouveaux éléments de réponse quant à la pertinence du passage au langage Julia
+pour les outils de prévision de la demande d'\HQ, et ce indépendamment des gains de lisibilité du Julia par rapport au Fortran77, ce qui est déjà un enjeu essentiel 
+en terme de pérennité et de transmission des connaissances. 
+Cette démarche permettra également de mettre l'implémentation réalisée dans des situations pouvant potentiellement mettre en difficulté la méthode d'optimisation utilisée par ENLSIP, 
+contrairement aux cas relativement simples vus précédemment. 
+ Cela pourrait potentiellement révéler de nouveaux bogues non détectés jusqu'à présent ou des portions de code mal retranscrites, notamment tout ce qui a trait à la gestion des erreurs.
+ Leur correction pourrait évidemment perfectionner l'algorithme. 
+ 
+ Un autre point à aborder concerne à la réalisation de tests sur un échantillon plus important de solveurs de programmation non linéaire. 
+ Ainsi, l'on pourra comparer avec plus de pertinence l'efficacité d'ENLSIP face à des algorithmes plus modernes. 
+
+Le projet sur lequel j'ai travaillé a aussi pour finalité de fiabiliser et moderniser des outils de prévision de la demande actuellement en production chez 
+Hydro-Québec, ce qui constitue le second grand objectif du projet après celui consistant à retranscrire en Julia ENLSIP-Fortran77 et à valider le nouveau codage sur des problèmes jouets. 
+Ces deux objectifs n'ont pas pu être 
+traités en parallèle puisque la complétion du premier objectif était la condition nécessaire de réalisation du second. 
+En outre, la retranscription en Julia a tout compte fait occupé la quasi-totalité de mon stage, tant l'analyse de 
+l'algorithme codé en Fortran77 s'est révélée plus complexe et longue que prévu. De plus, perfectionner la méthode requiert déjà de mettre en exergue les points
+devant être améliorés. Ceci ne peut être fait autrement qu'en confrontant ENLSIP à d'autres algorithmes d'optimisations déployant des méthodes plus actuelles.
+Certains points d'amélioration ont néanmoins pu être discutés au travers de mes échanges avec mon maître de stage.
+
+Un premier aspect pouvant être investigué concerne la gestion des contraintes. L'approche EQP développée dans ENLSIP amène à restreindre le nombre de contraintes 
+traitées et à ne travailler qu'avec des égalités, ce qui se révèle avantageux dans le cadre des moindres carrés. Néanmoins, les avancées récentes dans les approches de type
+primal-dual, tel que celle présentée par~\citet{andreas02} et adoptée dans IPOPT, permettent de mieux tirer parti de la totalité des contraintes et des multiplicateurs de Lagrange, améliorant grandement la convergence.
+Cela est d'autant plus le cas lorsque l'on se situe proche de la solution, configuration où ENLSIP peut être amélioré et bénéficier de ce type de travaux. On remarque par exemple sur la 
+figure~\ref{fig:iter julia} que les cinq dernières itérations ne modifient la fonction objectif qu'à partir de la huitième décimale, ce qui a en réalité peu d'impact sur la solution obtenue.
+
+Un autre aspect traite du calcul de la longueur de pas. La méthode décrite par~\citet{lindstromwedin1984}, développée dans les années 1980, présente des 
+caractéristiques pouvant s'apparenter aux méthodes de régions de confiance~\cite{conngoultoin00}. L'idée d'approcher la fonction objectif pénalisée afin de calculer 
+des valeurs de pas de plus en plus affinées est en effet commune aux deux approches. Agrémenter le calcul du pas d'une méthode de ce type pourrait donc également s'avérer pertinent en vue de la 
+modernisation d'ENLSIP.
+
+En somme, la modernisation de la méthode d'optimisation d'ENLSIP proprement dite pourra faire l'objet de futurs projets de recherche pour \HQ\ et l'UdeM.

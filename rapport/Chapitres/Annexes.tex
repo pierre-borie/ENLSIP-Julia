@@ -1,0 +1,77 @@
+\chapter*{Annexes}\label{Annexes}
+\markright{Annexes}
+\addcontentsline{toc}{chapter}{Annexes}
+
+\section*{Définition des composantes du calcul des pénalités}
+
+On rappelle:
+\begin{itemize}
+    \item $z=\left[(\nabla \hc_i(x_{k})^Tp_{k})^2 \right]_{1 \leq i \leq t}$ 
+    \item $\mu =  \left[\dfrac{|(J_{k}p_{k})^Tr(x_k) + \|J_{k}p_{k}\|^2|}{\delta} - \|J_{k}p_{k}\|^2 \right]$ $(\delta=0.25)$
+    \item $t$ est le nombre de contraintes actives à l'itération $k$
+    \item $\omega_1$ est la dimension utilisée dans le calcul du premier membre de $p_k$ la direction de descente(voir~\ref{direction_descente})
+\end{itemize}
+
+\begin{enumerate}
+    \item
+    Si $z^{T}\hat{w}^{(old)} \geq \mu$
+     
+     \begin{algorithmic}
+     \STATE{$\tau = 0$}
+     \FOR{$i=1:t$}
+     \STATE{$e=\nabla \hc_i(x_{k})^Tp_{k}(\nabla \hc_i(x_{k})^Tp_{k}+\hc_{i}(x_{k}))$}
+     \IF{$e > 0$}
+     \STATE{$y_{i}=e$}
+     \ELSE
+    \STATE{$\tau = \tau - e*\hat{w}_{i}^{(old)}$, $y_{i}=0$}
+     \ENDIF
+     \ENDFOR
+     \end{algorithmic}
+     
+     \item
+    Si $z^{T}\hat{w}^{(old)} < \mu$ et $\omega{1}\neq t$
+    
+     \begin{algorithmic}
+     \STATE{$\tau = \mu$}
+     \FOR{$i=1:t$}
+     \STATE{$e=-\nabla \hc_i(x_{k})^Tp_{k}*\hc_{i}(x_{k})$}
+     \IF{$e > 0$}
+     \STATE{$y_{i}=e$}
+     \ELSE
+    \STATE{$\tau = \tau - e*\hat{w}_{i}^{(old)}$, $y_{i}=0$}
+     \ENDIF
+     \ENDFOR
+     \end{algorithmic}
+     
+   Dans les deux cas ci-dessous, la première contrainte du problème~\ref{pb poids} est $y^{T}\hat{w} \geq \tau$.
+    
+    \item
+    Si $z^{T}\hat{w}^{(old)} < \mu$ et $\omega_{1}= t$
+    \begin{algorithmic}
+        \STATE $y = z$ et $\tau = \mu$ 
+    \end{algorithmic}
+    
+    Et la première contrainte du problème~\ref{pb poids} est $y^{T}\hat{w} = \tau$.
+    
+    \end{enumerate}
+     
+\begin{algorithm}
+  \centering
+  \begin{algorithmic}
+    \STATE{\textbf{function} goldstein\_armijo\_step}
+    \STATE{$\alpha=\alpha_{0}$}
+    \WHILE{$\phi(\alpha) \geq \phi(0) + \gamma * \alpha* \phi^{\prime}(0)$ \AND ($\alpha \|p_{k}\| > \varepsilon_{rel}$ \OR $\alpha > \alpha_{min}$)}
+    \STATE{$\alpha = \alpha /2$}
+    \ENDWHILE
+    \RETURN{$\alpha$}
+    \COMMENT{\textit{Les constantes $\varepsilon_{rel}$ et $\gamma$ désignent respectivement la racine carrée de la précision machine sur les nombres 
+        flottants et une constante valant $0.25$ en pratique}}
+  \end{algorithmic}
+  \caption{Calcul de longueur de pas avec une méthode de type Armijo-Goldstein} 
+    \label{fig:armijo}
+\end{algorithm}
+
+
+
+
+

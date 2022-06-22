@@ -1,0 +1,22 @@
+\chapter{Travail de recherche et implémentation}\label{Travail}
+\markright{Travail de recherche et implémentation}
+
+
+Ce chapitre présente d'abord le fruit de l'étude des travaux de~\citet{lindwedin88}; sont ensuite traités les différents 
+aspects de l'implémentation de cet algorithme en Julia résultant du travail de recherche réalisé.
+
+\section{Description de la méthode d'ENLSIP}\label{description_methode}
+
+L'analyse approfondie des articles de~\citet{lindwedin88}~\cite{lindstromwedin1984} sur la méthode d'ENLSIP, ainsi que du code source de l'algorithme écrit en Fortran77 
+par ces derniers, m'a permis de comprendre le fonctionnement de cette méthode d'optimisation. Cette partie, réalisée sur recommandation de mon maître de stage, 
+en relate les principaux aspects théoriques. 
+On se place dans le cadre où le problème d'optimisation à résoudre est celui présenté en~\eqref{pb_general}.
+
+\subsection{Principe général}
+
+Tout d'abord, il s'agit d'une méthode itérative avec longueur de pas. On rappelle que cela consiste, en partant d'un point de départ $x_0$, à construire une suite
+d'itérés $(x_k)_{K\in \mathbb{N}}$ convergeant vers la solution du problème.
+
+\section{Implémentation en Julia}
+
+Dès lors que je suis parvenu à modéliser et comprendre les aspects théoriques et pratiques de l'algorithme ENLSIP en Fortran77, j'ai pu réalisé son implémentation en Julia.

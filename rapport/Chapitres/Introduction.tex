@@ -1,0 +1,67 @@
+\chapter*{Introduction}\label{Indrotuction}
+\addcontentsline{toc}{chapter}{Introduction}
+
+Cette partie a pour but d'introduire le contexte dans lequel mon stage s'est déroulé et présente la problématique sur laquelle j'ai travaillé. 
+
+Le chapitre~\ref{Besoins} traite de l'ensemble des besoins et livrables attendus du projet puis de la méthode de travail
+envisagée. Les chapitres~\ref{edart},~\ref{Travail} et~\ref{Implementation} portent sur le travail effectué, à savoir l'étude bibliographique, 
+la finalité de mon travail de recherche et les résultats obtenus. Enfin, une conclusion dresse un bilan du travail réalisé et explore les différentes perspectives d'avenir du projet.
+
+\section*{Contexte du stage}\label{contexte}
+
+
+Mon stage de projet de fin d'études (PFE) est l'occasion d'une étroite collaboration entre l'Université de Montréal (UdeM) 
+et l'unité qui s'occupe de la prévision de la demande au sein de la division Trans\'Energie d'\HQ, société d'\'Etat responsable de la production, du transport et 
+de la distribution de l'électricité dans la province de Québec au Canada. La division Trans\'Energie est plus spécifiquement responsable du réseau de transport d'électricité.
+
+\`A cause de la pandémie due au Covid-19, je n'ai pas pu me rendre sur place. Mon stage s'est 
+donc déroulé entièrement en télé-travail depuis mon domicile à Paris. 
+
+Comme dit plus haut, \HQ\ est le principal fournisseur d'électricité au Québec. 
+Cette électricité est produite à partir de barrages hydroélectriques dont la bonne gestion des flux d'électricité 
+produits est primordiale pour \HQ. En effet, l'électricité doit être produite en quantité suffisante pour satisfaire la demande du Québec, sans pour autant en 
+produire plus que nécessaire afin de ne pas générer de pertes. C'est pourquoi \HQ\ dispose de plusieurs outils de prévision de la demande en électricité au 
+Québec à plus ou moins long terme.
+
+Mon sujet porte plus particulièrement sur la prévision de la demande sur un horizon de 24 à 48 heures, soit à court terme. Cette prévision est réalisée à l’aide 
+d’un modèle mathématique à plusieurs milliers de paramètres. La quantité d'électricité consommée par la population pouvant fortement varier en fonction des saisons, 
+des jours de la semaine voire de l'heure de la journée, ces paramètres doivent être ajustés avant la réalisation de chaque nouvelle prévision. 
+Gr\^ace \`a un ensemble de capteurs de puissance répartis le long des lignes de transport haute tension, 
+\HQ\ possède une quantité très importante de données de consommation électrique au jour le jour qui sont utilisées pour calibrer au mieux les paramètres de ce modèle. Ce procédé de calibration est réalisé par un algorithme 
+d'optimisation nommé ENLSIP dont la méthode et l'implémentation en Fortran77 ont été réalisées par~\citet{lindwedin88}. 
+Cet algorithme a pour but de résoudre un problème d’optimisation de moindres carrés non linéaires sous contraintes non 
+linéaires. Nous verrons dans la section~\ref{model_mc} la modélisation de ce type de problèmes et en quoi ce dernier est 
+bien adapté aux besoins d'\HQ.
+
+\section*{Problématique de stage}\label{problematique}
+
+Différentes complications se posent aujourd'hui avec l'utilisation d'ENLSIP. Tout d'abord, étant codé en Fortran77 et n'ayant pas 
+été mis à jour depuis plus de 30 ans, la maintenance de cet algorithme s'avère de plus en plus difficile à effectuer. 
+De plus, les besoins d'\HQ\ en termes de performance de leurs outils de prévision et de taille des problèmes à 
+résoudre ont évolué avec le temps et ne sont plus les mêmes que dans les années 80, le nombre de données dont ils 
+disposent ayant considérablement augmenté et étant amené à continuer à croître exponentiellement dans le futur avec les compteurs intelligents. 
+Cet aspect est accentué par le fait qu'ENLSIP a été conçu à une époque où 
+il y avait de fortes contraintes techniques sur le matériel informatique et la taille des problèmes que l'on pouvait 
+résoudre en un temps raisonnable (soit en quelques minutes). Ensuite, la méthode de résolution implémentée dans 
+ENLSIP ne bénéficie pas des progrès réalisés en programmation non linéaire, qui sont pourtant conséquents depuis les 
+années 80. \HQ\ souhaite donc moderniser leurs outils de prévision de la demande par la modification et l'amélioration d'ENLSIP et le 
+passage au langage Julia~\cite{Julia-2017}. Il s'agit en effet d'un langage dédié au calcul scientifique haute performance et les sciences des données, dont 
+la première version a été publiée en 2009 et qui est en plein essor. Ce nouveau langage a la particularité de rendre compatible la simplicité d'un langage de haut niveau 
+tel que Python et la performance d'un langage compilé tel que Fortran.
+
+
+ C'est dans ce cadre que s'inscrit mon sujet de PFE. 
+Ce projet a également fait l'objet d'un financement de la part de Mathematics of Information Technology and Complex Systems (MITACS), organisme national 
+ finan\c cant des programmes de recherche et de formation dans des domaines liés à l'innovation industrielle et sociale au Canada. 
+
+ Quant à mon travail, ce dernier s'articule autour de deux problématiques principales:
+
+\begin{description}
+\item
+  \textbullet\ Implémenter en Julia la méthode ENLSIP de résolution d'un problème de moindres carrés sous contraintes développée dans 
+ afin de fiabiliser et favoriser la maintenance de cet algorithme.
+\item
+  \textbullet\ Améliorer l'outil de prévision de la demande via l'implémentation, toujours en Julia, d'une méthode de 
+  résolution mieux adaptée aux nouveaux besoins d'\HQ\ et basée sur des aspects théoriques plus modernes.
+\end{description}
+

@@ -1,0 +1,89 @@
+\chapter{Besoins et organisation du projet}\label{Besoins}
+\markright{Besoins et organisation du projet}
+
+\section{Besoins}
+
+Avant d'expliciter le travail effectué lors de ce projet, il convient d'aborder ce qui est attendu de la part de l'UdeM 
+et d'\HQ.
+
+\subsection*{Livrables et travail à effectuer}\label{livrables}
+
+Dans un premier temps, certains livrables ont été définis avec mes collaborateurs, dont mon maître de stage. 
+Les principales attentes concernent l'implémentation de l'algorithme ENLSIP en Julia.
+Le code source de ce dernier doit en effet être fourni à travers différents fichiers Julia (format .jl) nécessaires
+pour l'exécution de l'algorithme. Ce travail ayant vocation à être disponible en open source sous la forme d'une librairie Julia, une documentation en anglais
+indiquant comment utiliser le solveur et consultable via un fichier HTML est également attendue. 
+
+Afin de s'assurer de l'efficacité de l'implémentation réalisée, différents tests sur des problèmes de moindres carrés seront réalisés tout au long de son développement.
+Ces derniers sont effectués et consultables par des fichiers notebooks Jupyter (format .ipynb), type de fichier compatible avec 
+l'exécution du code Julia. La modélisation des problèmes expérimentés ainsi que les résultats attendus doivent figurer sur ces fichiers de tests. 
+
+Les problèmes testés seront de deux catégories:
+\begin{itemize}
+    \item problèmes de programmation non linéaire documentés s'inscrivant dans un cadre purement mathématique;
+    \item problèmes formés à partir des modèles et données réelles utilisés par \HQ\ en contexte opérationnel.
+\end{itemize}
+
+Le premier type de problèmes a pour vocation de vérifier le bon déroulement de l'algorithme et sa concordance avec la version
+codée en Fortran77.
+
+Le dessein derrière le second type de problèmes est de tester l'algorithme dans des cas d'utilisation
+correspondant au contexte industriel auquel l'unité de prévision de la demande d'\HQ\ fait face quotidiennement. Ces problèmes-ci seront d'avantage mis à contribution
+lorsque l'implémentation d'ENLSIP en Julia sera terminée, afin d'amorcer le remplacement de l'algorithme en Fortran77 par la nouvelle version en Julia. 
+Les différents résultats obtenus à travers des tests effectués sont décrits dans la section~\ref{implementation:resultats}.
+
+Le dernier livrable attendu, requis par Fabian Bastin mon maître de stage, concerne plus particulièrement la méthode d'optimisation 
+employée dans ENLSIP. En effet, la description mathématique de celle-ci n'est pas intégralement documentée 
+par ses auteurs~\citet{lindwedin88}. Or, en vue de moderniser la méthode implémentée dans cet algorithme, il est important
+d'en comprendre tous les aspects théoriques afin de mieux cibler les points qui peuvent être améliorés. Une documentation avec la formulation mathématique des 
+différents éléments de la méthode d'optimisation d'ENLSIP est donc attendue. Le fruit de ce travail est présentée au chapitre~\ref{Implementation}.
+
+\subsection*{Résultats et performances attendus}\label{besoins:resultats}
+
+Ensuite, la finalité de ce projet étant de produire un algorithme devant être utilisé en contexte industriel, des résultats et performances sont attendus de la part
+d'\HQ. 
+
+L'objectif premier derrière le passage à Julia est, pour \HQ, de fiabiliser plusieurs de ses outils de prévision de la demande en électricité. Cela passe par la retranscription
+ exacte de la méthode usitée dans ENLSIP codée originellement Fortran77 tout en tirant parti des avantages de programmation conférés par le nouveau langage Julia, plus moderne et moins complexe à maintenir 
+ que le Fortran77. L'amélioration de l'algorithme et de la méthode utilisée à proprement parler ne vient que dans un second temps. Il est donc primordial de d'abord 
+ produire un outil renvoyant des résultats identiques, à la précision machine près, à ceux obtenus avec la version Fortran77. 
+
+Enfin, les résultats en termes de temps de calcul entre les deux versions doivent être similaires ou réduits afin que la transition au Julia ne se fasse pas au prix d'une 
+ dégradation des performances. Puisqu'il s'agit d'un optimiseur en appui à des outils opérationnels de prévision de la demande court terme, les temps d'exécution
+ sont soumis à des contraintes de temps de calcul, en particulier pour les cas rencontrés en contexte opérationnel. Celles-ci sont de cet ordre:
+
+ \begin{itemize}
+     \item de $10$ à $30$ secondes sur des problèmes de petite taille (i.e. jusqu'à cinq paramètres);
+     \item de $10$ à $15$ minutes pour des problèmes de grande taille, soit issus du contexte opérationnel (i.e. de l'ordre de plusieurs centaines de paramètres).
+ \end{itemize}
+
+ \section{M\'ethode de travail}
+
+Ce projet ayant été réalisé en télé-travail permanent depuis mon domicile à Paris, l'éloignement géographique avec mes collaborateurs, 
+tous résidents au Québec, a donc d\^u \^etre pris en compte dans son organisation. \'Etant donné que j'étais seul à travailler sur la retranscription 
+en Julia de l'algorithme en Fortran77, cela n'a pas été un réel obstacle pour avancer dans mes recherches. 
+
+\subsection*{Développement itératif}
+
+Vu la complexité la complexité que présente l'algorithme ENLSIP, il a fallu instaurer une stratégie de développement avec mon maître de stage.
+
+L'idée a été d'ajouter chacune des fonctionnalités de la méthode, décrites au chapitre~\ref{Implementation}, de façon itérative, ceci afin de complexifier
+au fur et à mesure l'implémentation en Julia. Des entrevues avec mon maître de stage se sont tenues de façon hebdomadaire. Ces dernières étaient dédiées d'abord 
+à la présentation de mon travail de la semaine passée, puis aux points sur lesquels travailler pour la semaine à venir. Cela a permis de s'adapter aux difficultés
+rencontrées au cours du développement de l'algorithme. Afin de garder une traçabilité de toutes les versions intermédiaires de mon travail, un répertoire github
+a également été mis en place.
+
+\`A chaque nouvel ajout d'une fonctionnalité, mon implémentation a été testée sur les problèmes de tests exposés à la section~\ref{implementation:resultats}. 
+Cela a régulièrement permis de repérer quels éléments devaient être améliorés en priorité pour la prochaine version.
+
+\subsection*{Collaboration avec Hydro-Québec}
+
+Ensuite, comme mon stage s'inscrit dans un projet plus global de modernisation des outils de prévision de la demande d'\HQ, certains membres de l'unité Prévisions de la demande
+ont également été des parties prenantes de mon PFE. Ces dernières m'ont aidé à accéder à des environnements de travail me permettant de tester mon implémentation 
+d'ENLSIP sur des machines virtuelles et infrastructures proches de celles d'\HQ\ en contexte opérationnel. Une présentation de mon travail a eu lieu de fa\c con régulière 
+avec les membres d'\HQ impliqués dans le projet également sur une base hebdomadaire.
+
+Cette collaboration avait également pour objectif de mettre en place différents tests de mon algorithme sur des jeux de données réelles et avec des modèles de 
+prévision utilisés par \HQ. Néanmoins, cela s'est jusqu'à présent avéré difficile à mettre en place. En effet, les modèles étant relativement complexes et 
+codés en Fortran, une passerelle entre les langages Fortran et Julia a dû être mise en place afin de pouvoir appeler ces fonctions en Fortran depuis un 
+script en Julia. Ce travail est néanmoins fortement avancé et sera mis à contribution lors de travaux futurs sur le projet. 

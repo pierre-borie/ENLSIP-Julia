@@ -1,0 +1,143 @@
+\documentclass{FichiersSource/rapport_ienac}
+
+\usepackage{lipsum}
+\usepackage{wrapfig}
+\usepackage{pdfpages}
+\usepackage{algorithm}
+\usepackage{algorithmic} % Pour des algorithmes en pseudo-code
+\usepackage{color, colortbl}
+\usepackage{tabularx}
+\usepackage{flafter} 
+
+%   Reduce the margin of the summary:
+\def\changemargin#1#2{\list{}{\rightmargin#2\leftmargin#1}\item[]}
+\let\endchangemargin=\endlist 
+
+%\usepackage[square,sort,comma,numbers]{natbib} 
+% \usepackage[round, sort,comma,authoryear]{natbib} 
+% Pour les citations plus propres
+\hypersetup{linkcolor=black,citecolor=blue,filecolor=dullmagenta,urlcolor=blue}
+%\usepackage[table]{xcolor}
+
+% Commandes perso
+\newcommand\real{\mathbb{R}}
+\newcommand\naturals{\mathbb{N}}
+\newcommand\HQ{Hydro-Québec}
+\newcommand\hc{\hat c}
+\newcommand\ha{\hat A}
+\newcommand\mindim{\text{mindim}}
+
+
+\setcounter{secnumdepth}{3} % définit la profondeur des sections
+\setcounter{tocdepth}{3} % défini la profondeur de la table des matières
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Définition des objets
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Titre du projet
+\title{Documentation de l'implémentation d'ENLSIP en Julia}
+% Noms des étudiants
+\author{Pierre Borie}
+
+
+% Noms des encadrants
+\supervisor{Fabian Bastin et Stéphane Dellacherie}
+% Date d'aujourd'hui 
+
+% Promotion
+\typedoc{Fiabilisation d'un outil de prévision de la demande en électricité au Québec utilisé par Hydro-Québec} 
+\promotion{IENAC18 SITA--IA M2RO}
+
+% Date de passage de la soutenance
+\datepassage{20 mars 2022}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% DÉBUT DOCUMENT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+\let\cleardoublepage\clearpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Page de garde
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\maketitle
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Si besoin d'Abstract, Remerciements, Résumé, ... 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\include{Chapitres/Remerciements}
+\include{Chapitres/Resume}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Table des matières 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\tableofcontents
+ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Insertion du fichier correspondant à une partie
+% Faire commande \include{Chapitres/nom_chapitre}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Liste des figures
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\listoffigures  
+\addcontentsline{toc}{chapter}{\textmd{Table des figures}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Liste des tableaux
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\listoftables   
+%\addcontentsline{toc}{chapter}{\textmd{Liste des tableaux}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Introduction
+\include{Chapitres/Introduction}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Coeur du rapport
+
+\include{Chapitres/Besoins} % Organisation du projet
+\include{Chapitres/EdArt} % Revue de littérature sur les moindres carrés
+\include{Chapitres/Travail} % Description de la méthode ENLSIP
+\include{Chapitres/Implementation} % Commentaires sur l'implémentation en Julia 
+\include{Chapitres/Perspectives} % Conclusion 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Accronymes
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Bibliographie
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\thispagestyle{fancy}
+\bibliographystyle{plainnat-fr} 
+\bibliography{biblio}
+% Le style est mis entre accolades.
+\thispagestyle{fancy}
+\addcontentsline{toc}{chapter}{\textmd{Bibliographie}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Annexes
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\appendix
+\include{Chapitres/Annexes.tex}
+
+
+  
+\end{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FIN DOCUMENT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

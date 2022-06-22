@@ -329,4 +329,4 @@ docs/site/
 Manifest.toml
 
 # Jupyter Notebook
-.ipynb_checkpoints
+*.ipynb_checkpoints

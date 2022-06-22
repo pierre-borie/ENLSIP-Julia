@@ -1,0 +1,46 @@
+
+
+%   Generate the environment for the abstract:
+\newcommand\summaryname{Abstract}
+\newenvironment{Abstract}%
+    {\small\begin{center}%
+    \bfseries{\summaryname} \end{center}}
+
+%   Generate the environment for the Résumé:
+\newcommand\nomresume{Résumé}
+\newenvironment{Resume}%
+    {\small\begin{center}%
+    \bfseries{\nomresume} \end{center}}
+
+% Insert Résumé
+\begin{Resume}
+    \begin{changemargin}{1cm}{1cm}
+        Afin de prévoir efficacement la demande en électricité à court terme, Hydro-Québec, principal producteur d’électricité du Québec, 
+        calibre ses modèles de prévision grâce à l'utilisation d'ENLSIP, algorithme d'optimisation écrit en Fortran77.  
+        Néanmoins, sa maintenance est désormais complexe à assurer. Afin d'améliorer sa fiabilité, 
+        nous en proposons une nouvelle implémentation réalisée dans le langage Julia, langage informatique moderne conçu pour le calcul scientifique haute 
+        performance et les sciences des données. 
+        Cette dernière s'accompagne d'une modélisation de la méthode d'optimisation utilisée ainsi que de tests effectués sur des problèmes de moindres carrés 
+        pour en évaluer les performances. Sont ensuite explorées certaines pistes d'amélioration. 
+     
+    \end{changemargin}
+\end{Resume}
+
+\vspace{1cm}
+        
+\textbf{Mots-clés:} Optimisation non linéaire sous contraintes, moindres carrés, calibration de modèle, demande en énergie, langage de programmation Julia.
+
+\vspace{2cm}
+% Insert bastract
+\begin{Abstract}
+\begin{changemargin}{1cm}{1cm}
+    In order to predict efficiently short term demand, the main electricity producer in Quebec, Hydro-Quebec, calibrates its own previsions models by using ENLSIP,
+    an algorithm written in Fortran77 harder to maintain correctly nowadays. This report exposes a new implementation made in the Julia programming language. 
+    A modelisation of the optimisation method used is detailled. The performances are also evaluated by running the algorithm on least squares test problems. Finally,
+    some ideas of improvement are discussed.
+\end{changemargin}
+\end{Abstract}
+
+\vspace{1cm}
+
+\textbf{Keywords: } Constrained nonlinear programming, least squares, model calibrating, energy demand, Julia programming language.

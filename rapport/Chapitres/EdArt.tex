@@ -1,0 +1,381 @@
+\chapter{\'Etat de l'art}\label{edart}
+
+\markright{\'Etat de l'art}
+
+Les problèmes de moindres carrés occupent une place importante en programmation linéaire et non linéaire~\cite{schitt88,hansonkrogh92, dennschn96, nocewrig99} et 
+plusieurs méthodes de résolution telles que des méthodes de type Newton, Gauss--Newton~\cite{lindstromwedin1984}, Levenberg--Marquardt~\cite{jjmore78} ou encore 
+de régions de confiance~\cite{conngoultoin00} ont déjà beaucoup été étudiées. On trouve de nombreuses applications de ces méthodes, ou de variations autour de ces 
+dernières dans les problèmes de calibration de modèles~\cite{johnson08} ou bien dans la régression linéaire en apprentissage 
+statistique~\cite{eslii09, audicatoni11}.
+
+Ce chapitre propose d'abord une modélisation générale d'un problème de moindres carrés sous contraintes puis s'ouvre sur une revue de la littérature de 
+différentes méthodes de résolution utilisées face à ce type de problèmes.
+
+\section{Présentation du problème de moindres carrés}\label{model_mc}
+
+Comme dit en introduction, l'algorithme utilisé par \HQ\ résout un problème de moindres carrés, dont une modélisation dans le cas général est donnée ci--après. 
+Cette catégorie de problèmes d'optimisation occupe une place importante en programmation linéaire et non linéaire.
+
+Les notations utilisées dans cette section s'appuient sur celles utilisées par~\citet{lindwedin88}, cet article expliquant la méthode implémentée dans ENLSIP.
+
+On note $q,l,m\text{ et }n$  des entiers naturels tels que $q \leq l \leq n \leq m$. 
+
+On considère $m$ observations réelles, pouvant s'apparenter à des observations temporelles, $(t_{i},y_{i})$, les $t_i$ représentant les données d'entrée et 
+les $y_i$ celles de sortie. On souhaite ajuster un modèle $h$ de paramètre $x\in \real^{n}$ qui est censé approcher au mieux nos observations, 
+tout en satisfaisant $l$ contraintes (potentiellement non linéaires) dont $q$ sont des contraintes d'égalité, les $l-q$ restantes étant des contraintes 
+d'inégalité.
+
+Ces $l$ contraintes sont modélisées par la multi-fonction $c = (c_{1}, \ldots, c_{l})^{T}: \real^{n} \to \real^{l}$ dont les $q$ premières composantes correspondent 
+aux contraintes d'égalité et les $l-q$ suivantes correspondent aux contraintes d'inégalité.
+
+Ensuite, pour $i=1,\ldots,m$, on modélise l'écart entre la $i$-ème observation et la prédiction associée par la fonction $r_{i}: x \mapsto y_{i} - h(t_{i},x)$.
+
+La multi-fonction vectorielle $r =(r_{1}, \ldots,r_{m})^{T}: \real^{n} \to \real^{m}$, aussi appelée fonction des résidus, représente, à travers ses 
+composantes, l'écart entre les observations et les prédictions réalisées par le modèle $h$. La somme des écarts au carré entre prédictions et observations 
+modélise alors l'erreur générée par le modèle $h$ pour un certain jeu de paramètres $x$. On cherche donc à trouver le paramètre $x^{*}$ qui minimise cette somme, 
+soit:
+\[
+x^* = \underset{x \in \mathbb{R}^{n}}{\text{argmin}} \sum_{i=1}^{m} \left(h(t_{i},x)-y_{i})\right)^{2}.
+\]
+
+On souhaite trouver les paramètres minimisant la norme euclidienne des résidus, soit la fonction $f:x\mapsto \dfrac{1}{2}\|r(x)\|^{2}$.
+
+
+Le problème de moindres carrés non linéaires sous contraintes se modélise alors de la fa\c con suivante:
+
+\begin{equation} \label{pb_general}
+  \left\{ \begin{aligned}
+    &\underset{x \in \mathbb{R}^n}{\min} \dfrac{1}{2}\|r(x)\|^2, & \\ 
+    &\textnormal{s.c.}&  \\
+    &c_{i}(x) = 0,\ \textnormal{ pour } i=1,\ldots,q, \\
+    &c_{j}(x) \geq 0,\ \textnormal{ pour } j=q+1,\ldots,l.
+  \end{aligned} \right. 
+\end{equation}
+
+On se place dans le cas où la fonction $r$ est continûment différentiable deux fois afin que le gradient et la matrice hessienne de la fonction objectif $f$ soient
+bien définis.
+
+La matrice jacobienne de la fonction $r$, notée $J$ et de taille $(m\times n)$, s'exprime par:
+
+\begin{equation}\label{jac_res}
+  J(x)  =
+  \begin{bmatrix}
+    \nabla r_1(x)^T \\
+    \vdots \\
+    \nabla r_m(x)^T
+  \end{bmatrix}.
+\end{equation}
+
+
+
+On peut alors calculer directement les expressions du gradient et de la matrice hessienne de $f$:
+
+\begin{align}
+  \nabla f(x) &= \sum_{k=1}^mr_k(x)\nabla r_k(x) = J^T(x)r(x)\label{grad_f},\\
+  \nabla^2f(x) &=  \sum_{k=1}^m\nabla r_k(x)\nabla r_k(x)^T +  \sum_{k=1}^mr_k(x)\nabla^2 r_k(x) \\
+  &= J^T(x)J(x) + \sum_{i=1}^m r_i(x)\nabla^2r_i(x)\label{hess_f},
+\end{align}
+
+où les $\nabla^2 r_k=\left[\dfrac{\partial^2r_k}{\partial x_ix_j}\right]_{(i,j)},\ k=1,\ldots,m,$ sont les hessiennes des $m$ composantes des résidus.
+
+Le problème considéré comprenant des contraintes, on rappelle que si $x^{*}$, un minimum local de~\eqref{pb_general}, 
+satisfait les conditions KKT, alors il existe $\lambda^{*} \in \real^{l}$ tel que:
+
+\begin{equation}\label{kkt}
+\begin{aligned}
+\nabla f(x^{*}) - \sum\limits_{i=1}^{l} \lambda_{i}^{*}\nabla c_{i}(x^{*})&= 0,\\
+c_{i}(x^{*}) &= 0, \ \text{pour } i=1,\ldots,q,\\
+c_{j}(x^{*}) &\geq 0, \ \text{pour } j=q+1,\ldots,l,\\
+\lambda_{j}^{*} &\geq 0, \ \text{pour } j=q+1,\ldots,l,\\
+\lambda_{j}^{*} c_{j}(x^{*}) &= 0, \ \text{pour } j=q+1,\ldots,l.
+\end{aligned}
+\end{equation}
+
+Le lagrangien du problème~\eqref{pb_general} s'écrit comme:
+\begin{equation}\label{lagrangien}
+\mathcal{L}:(x,\lambda) \longmapsto f(x) - \sum\limits_{i=1}^l \lambda_{i}c_{i}(x),
+\end{equation}
+
+où $\lambda$ désigne le vecteur des multiplicateurs de Lagrange.
+
+
+\section{Le cas des moindres carrés linéaires}\label{cas_lineaire}
+
+Une première méthode part du cas où le modèle $h$ tel que présenté en~\eqref{model_mc} est une fonction linéaire de $x$, i.e. $h(x) = Ax$, où $A$ 
+est une matrice $(m\times n)$, et où il n'y a pas de contraintes. 
+
+Le problème~\eqref{pb_general} se réécrit simplement:
+\begin{equation}\label{pb_lineaire}
+    \min f(x) = \dfrac{1}{2} \|Ax - y\|^2.
+\end{equation}
+
+On a également: 
+\[
+\nabla f(x) = A^T(Ax-y), \ \nabla^2f(x)=A^TA.
+\]
+
+Le cas linéaire assure trivialement la convexité de la fonction objectif et donc que tout point $x^*$ vérifiant $\nabla f(x^*)=0$ est un 
+minimiseur global de $f$, ce qui impose la satisfaction des équations linéaires suivantes, aussi appelées équations normales: 
+\begin{equation}\label{eq_normales}
+    A^TAx^*=A^Ty.
+\end{equation}
+
+\citet{nocewrig99} présentent trois approches de calcul matriciel pour résoudre le système~\eqref{eq_normales}: une s'appuyant sur la factorisation de 
+Cholesky de $A$, une autre utilisant une factorisation QR de $A$ et enfin une faisant intervenir la décomposition en valeurs singulières de $A$. 
+Nous allons décrire la deuxième, soit celle avec la factorisation QR, car elle occupe une part importante de l'algorithme ENLSIP sur lequel j'ai travaillé ~\cite{lindwedin88}.
+
+
+On rappelle que la factorisation QR de $A$ consiste à définir les matrices:
+\begin{itemize}
+    \item $Q\text{ une matrice orthogonale } (m\times m)$;
+    \item $R$ matrice triangulaire supérieure $(n \times n)$; 
+    \item $P \text{ une matrice de permutation } (n \times n)$,
+\end{itemize}
+telles que
+\begin{equation}\label{fact_qr}
+AP = Q 
+\begin{pmatrix} 
+R \\ 
+0
+\end{pmatrix} = Q_1R,
+\end{equation}
+avec $|r_{11}| \geq |r_{22}| \geq \ldots \geq |r_{nn}|$ où les $r_{ii}$ désignent les éléments diagonaux de $R$ et $Q_1$ les $n$ premières colonnes de $Q$.
+On montre que cette factorisation QR existe pour toute matrice $A\ (m\times n)$.
+
+En permutant ainsi les colonnes de la matrice $A$, on peut déterminer son rang en calculant celui de $R$. En effet, étant 
+triangulaire supérieure et à éléments diagonaux décroissants en valeur absolue, on a:
+
+\begin{equation}\label{calcul rang}
+  \text{rang}(A)= \underset{1\leq i\leq n}{\max} \left\{ i\ | \ |r_{ii}| > 0\right\}.
+\end{equation}
+
+Cela permet notamment de détecter efficacement si le système linéaire induit par le problème~\eqref{pb_lineaire} est de rang déficient ou non.
+On suppose néanmoins que la matrice $A$ est de rang plein pour la suite.
+
+En remarquant que $\|Ax-y\|=\|Q^T(Ax-y)\|$ et en injectant la factorisation~\eqref{fact_qr}, la solution $x^*$ s'obtient directement par:
+\[
+x^* = PR^{-1}Q_1^Ty.
+\]
+
+D'un point de vue numérique, l'autre avantage de cette approche de résolution est qu'elle ne dégrade pas forcément le conditionnement du problème, 
+ce dernier étant fortement déterminé par celui de la matrice $A$.
+
+La résolution des équations normales est un enjeu majeur des problèmes de régression linéaire tels que ceux utilisés en apprentissage statistique 
+chez~\citet{eslii09} et~\citet{johnson08}, pour lesquels les modèles de prédiction sont très souvent linéaires. 
+
+\section{Méthode de Gauss--Newton}\label{edart:method_gn}
+
+On s'intéresse désormais au cas où la fonction objectif est non linéaire. Les approches de type Gauss-Newton sont très utilisées pour les méthodes 
+itératives car sont bien adaptées à cette structure de problèmes. Comme présentées chez~\citet{dennschn96} et~\citet{nocewrig99}, 
+elles s'appuient sur une linéarisation du premier ordre de la fonction des résidus autour d'un point $x$:
+\begin{equation}\label{linear_res}
+r(x+p) \approx J(x)p + r(x).
+\end{equation}
+
+Dans le cadre d'un algorithme itératif, on se place à l'itération $k\in \mathbb{N}$ en un point $x_k$ fixé et on cherche une direction de descente $p_k$ 
+permettant d'obtenir un nouvel itéré $x_{k+1}=x_k+p_k$ faisant diminuer la fonction objectif. Cela est répété jusqu'à la convergence vers un minimum.
+
+Chercher cette direction de descente revient, $x_k$ étant fixé, à résoudre:
+\[
+\underset{p}{\min}\ f(x_k+p) = \underset{p}{\min}\ \dfrac{1}{2}\|r(x_k+p)\|^2.
+\]
+
+En injectant la linéarisation~\eqref{linear_res}, la direction de descente est choisie comme étant la solution du problème, cette fois-ci quadratique:
+
+\begin{equation}\label{sous_pb_linearise}
+\underset{p}{\min}\ \dfrac{1}{2}\|J(x_k)p + r(x_k)\|^2.
+\end{equation}
+
+Le sous-problème de l'itération $k$ est un problème de moindres carrés linéaires comme celui en~\eqref{pb_lineaire} auquel on peut par exemple appliquer la méthode 
+décrite en section~\ref{cas_lineaire}. Notons d'ailleurs que la solution de ce sous-problème, notée $p_{GN}$, vérifie les équations normales~\eqref{eq_normales}, 
+soit:
+
+\begin{equation}\label{result_gn}
+J(x_k)^TJ(x_k)p_{GN}=-J(x_k)^Tr(x_k).
+\end{equation}
+
+
+Partant d'une méthode de type Newton où l'on résout pour un vecteur $p$ le système:
+
+\begin{equation}\label{syst_newton}
+  \nabla^2f(x_k)p=-\nabla f(x_k),
+\end{equation}
+
+
+
+on remarque qu'en injectant les expressions du gradient et de la hessienne de la fonction objectif $f$ respectivement en~\eqref{grad_f} 
+et~\eqref{hess_f} dans~\eqref{syst_newton}, en ignorant les termes associés aux dérivées d'ordre $2$, on retrouve les équations normales~\eqref{result_gn}
+
+La méthode de Gauss-Newton s'obtient alors en faisant l'approximation:
+
+\[ \nabla^2f(x_k) \approx J(x_k)^TJ(x_k)\].
+
+
+L'avantage de cette dernière est que les hessiennes des résidus n'ont pas à être calculées explicitement. 
+En effet, cela revient à supposer que les termes $r_i(x)\nabla^2r_i(x)$ de l'expression~\eqref{hess_f} sont nuls, ce qui constitue un important gain de temps de 
+calcul et de mémoire sur des problèmes de grande taille. 
+De plus, il s'avère en pratique que c'est une assez bonne approximation pour les problèmes ayant de faibles valeurs de résidus, ce qui est d'autant plus vrai à la 
+solution optimale, comme mentionné chez~\citet{nocewrig99}.
+
+Néanmoins, la méthode présentée n'est pas applicable en tant que tel au cas avec contraintes, qui est pourtant celui du problème~\eqref{pb_general}. 
+C'est d'ailleurs une des difficultés rencontrées lors de ma recherche d'ouvrages et travaux sur les moindres carrés; en effet, la plupart des méthodes de 
+résolution concernent plutôt le cas non contraint. Ce dernier s'applique dans la plupart des problèmes de calibration de modèles, comme en apprentissage 
+automatique par exemple~\citet{audicatoni11}. 
+
+Comme nous le verrons plus en détail au chapitre~\ref{Travail}, la méthode itérative développée par~\citet{lindwedin88} se base sur Gauss-Newton mais a la particularité 
+de justement prendre en compte des contraintes d'égalité et d'inégalité.
+
+
+Notons simplement qu'à chaque itération, on procède d'abord à une prédiction des contraintes actives à la solution à l'aide d'une estimation des multiplicateurs 
+de Lagrange afin de ne travailler qu'avec des contraintes d'égalité, comme dans une approche dite EQP (pour Equality Quadratic Programming) 
+tel que décrit dans~\cite{nocewrig99}. Les contraintes restantes et les résidus sont ensuite linéarisés et différents sous-problèmes sont résolus à l'aide de 
+décompositions matricielles QR. Cela permet de calculer une direction de descente menant vers un point réalisable, i.e. satisfaisant toutes les contraintes, et faisant diminuer la 
+fonction objectif. On choisit ensuite une longueur de pas le long de cette direction de descente par une recherche linéaire dont la méthode est renseignée 
+par~\citet{lindstromwedin1984}.
+
+
+\section{Méthode de Levenberg--Marquardt}\label{method_leven_marq}
+
+La méthode de Levenberg-Marquardt est une autre méthode itérative très utilisée pour la résolution de moindres carrés. Son principe général et les principaux aspects 
+théoriques sont explicités par \citet{jjmore78}. Le point de départ de cette méthode est, comme en section~\ref{edart:method_gn}, une linéarisation de la fonction des 
+résidus amenant à devoir résoudre à chaque itération le sous problème~\eqref{sous_pb_linearise} afin de calculer une direction de descente. L'ajout par rapport 
+à la méthode de Gauss--Newton vue en~\ref{edart:method_gn} est que l'on prend en compte le fait que la linéarisation n'est pas valable pour tout vecteur $p$ dans la 
+modélisation du sous problème à résoudre. Les directions de descente potentielles sont en effet restreintes à un certain ensemble $E_k$, 
+d'où en~\eqref{sous_pb_levenberg} le sous problème:
+
+\begin{equation}\label{sous_pb_levenberg}
+\underset{p\in E_k}{\min} \dfrac{1}{2}\|J(x_k)p + r(x_k)\|^2,
+\end{equation}
+
+avec $E_k = \left\{p \ , \ \|D_kp\|\leq \Delta_k\right\}$ et où:
+\begin{itemize}
+    \item $D_k$ est une matrice diagonale prenant en compte le potentiel mauvais conditionnement du problème, ses éléments dépendant des dérivées partielles des 
+    résidus;
+    \item $\Delta_k$ est un réel positif.
+\end{itemize}
+
+Or, \citet{jjmore78} montre que si $p_{LM}$ est solution de~\eqref{sous_pb_levenberg}, alors il existe $\mu_k > 0$ tel que:
+
+\begin{equation}\label{result_levenberg}
+\left[J(x_k)^TJ(x_k)+\mu_kD_k^TD_k\right]p_{LM}=-J(x_k)^Tr(x_k).
+\end{equation}
+
+On retrouve une formulation similaire à celle de l'équation~\eqref{result_gn}, à l'exception du terme $\mu_kD_k^TD_k$ faisant ici office de terme correctif et 
+améliorant la convergence pour les problèmes moins bien conditionnés.
+
+Une procédure type pour cette méthode est décrite par \citet{jjmore78}:
+\begin{enumerate}
+    \item Pour $\Delta_k$ donné, trouver $\mu_k$ et $p_k$ vérifiant~\eqref{result_levenberg}.
+    \item Si $f(x_k+p_k) \leq f(x_k)$ alors $x_{k+1}=x_k+p_k$, sinon $x_{k+1}=x_k$.
+    \item Choix de $\Delta_{k+1}$ et $D_{k+1}$.
+\end{enumerate}
+
+Les choix des paramètres ou des méthodes numériques de résolution peuvent évidemment varier d'une implémentation à l'autre.
+
+Dans des approches plus récentes, comme celle présentée par~\citet{yuan11},
+l'équation de la direction de descente est plutôt donnée en par:
+\begin{equation}\label{result_levenberg_2}
+    \left[J(x_k)^TJ(x_k)+\mu_kI\right]p_{LM}=-J(x_k)^Tr(x_k),
+\end{equation}
+ où $I$ est la matrice identité. Le paramètre $\mu_k$ est quant à lui mis à jour en fonction des performances des précédentes itérations, 
+ c'est-à-dire en fonction de $\|r(x_k)\|$ directement comme suit:
+ \[
+ \mu_k = \|r(x_k)\|^{\delta},
+ \]
+pour un certain $\delta \in [1,2]$ défini au préalable. Sous certaines hypothèses, \citet{yamafuku01} montrent que ceci permet d'obtenir une convergence 
+quadratique vers la solution du problème.
+
+\section{Méthode de régions de confiance}\label{method_trust_region}
+
+
+Les régions de confiance~\cite{conngoultoin00} sont un autre exemple de méthode pouvant bien s'adapter à la structure des moindres carrés. On reste encore une fois dans le cas sans 
+contraintes.
+
+S'agissant là de méthodes itératives, l'idée est toujours de construire une suite d'itérés $x_k$ convergeant vers la solution du problème. \`A chaque itération, 
+partant d'un point $x_k$, on définit un modèle $m_k(x)$ qui approche la fonction objectif $f$ dans un voisinage de $x_k$. Ce voisinage, noté $\mathcal{B}_k$, 
+est aussi appelé région de confiance et est défini comme suit:
+
+\begin{equation}\label{trust_region_def}
+    \mathcal{B}_k=\left\{ x \in \real^n,\ \|x-x_k\|_k\leq\Delta_k\right\},
+\end{equation}
+
+où $\Delta_k$ est le rayon de la région de confiance et $\|\cdot\|_k$ est la norme choisie à l'itération $k$.
+
+Une fois $\mathcal{B}_k$ défini, on cherche à calculer $s_k$ tel que le point $x_k+s_k$ réduit au mieux la fonction objectif $m_k$. Si c'est bel et bien le cas, 
+le rayon $\Delta_k$ est maintenu voire étendu, sinon on le réduit. 
+
+La figure~\ref{fig_algo_btr} décrit les grandes étapes d'un exemple d'algorithme présenté par~\citet{conngoultoin00}.
+
+
+L'intérêt de l'utilisation des régions de confiance pour les moindres carrés réside dans le fait qu'au lieu de construire directement un modèle de la 
+fonction objectif $f$, on se base sur un modèle $m_k^r$ de la fonction des résidus à chaque itération $k$:
+\[
+m_k^f(x) \underset{\textnormal{def}}{=} \dfrac{1}{2}\|m_k^r(x)\|^2.
+\]
+
+\citet{conngoultoin00} montrent qu'avec un bon choix de modèle pour $r$, on peut alors obtenir un modèle du second ordre pour $f$ et se ramener à des calculs de 
+moindres carrés linéaires. Sous certaines hypothèses de différentiabilité sur la fonction $r$, on assure la convergence de l'algorithme présenté en 
+figure~\ref{fig_algo_btr}.
+
+\begin{figure}
+  \centering
+  \begin{description}
+    \item[\'Etape 0: Initialisation.] Le point initial $x_0$ et un rayon initial de la région de confiance  $\Delta_0$ sont donnés. 
+    Les constants $\eta_1, \eta_2, \gamma_1$ et $\gamma_2$ sont aussi données et satisfont:
+    \begin{equation*}
+      0<\eta_1\leq\eta_2<1 \text{ et } 0<\gamma_1\leq\gamma_2<1.
+    \end{equation*}
+
+    On calcule $f(x_0)$ et on initialise $k$ à $0$.
+    \item[\'Etape 1: Définition du modèle.] On choisit une norme $\|.\|_k$ et on définit un modèle $m_k$ sur $\mathcal{B}_k$.
+    \item[\'Etape 2: Calcul du pas.] On calcule un pas $s_k$ qui diminue "suffisamment" le modèle $m_k$ et tel que $x_k+s_k\in \mathcal{B}_k$.
+    \item[\'Etape 3: Acceptation du nouveau point.] On calcule $f(x_k+s_k)$ et on définit:
+    \begin{equation}
+      \rho_k = \dfrac{f(x_k)-f(x_k+s_k)}{m_k(x_k)-m_k(x_k+s_k)}.
+    \end{equation}
+
+    Si $\rho_k\geq \eta_1$, alors on définit $x_{k+1} = x_k+s_k$; sinon, $x_{k+1}=x_k$.
+    \item[\'Etape 4: Mise à jour du rayon de la région de confiance.] 
+    \begin{equation}
+      \Delta_{k+1} = \left\{ \begin{aligned}
+        &\left[\Delta_k, +\infty\right[&  &\text{si } \rho_k\geq \eta_2,\\
+        &\left[\gamma_2\Delta_k,\Delta_k\right]&  &\text{si } \rho_k\in \left[\eta_1,\eta_2\right],\\
+        &\left[\gamma_1\Delta_k,\gamma_2\Delta_k\right]&  &\text{si } \rho_k<\eta_1.
+      \end{aligned}
+        \right.
+    \end{equation}
+
+    On incrémente $k$ de $1$ et on retourne à l'étape $1$.
+  \end{description}
+  \caption{Exemple d'algorithme de régions de confiance présenté par~\citet{conngoultoin00}}
+  \label{fig_algo_btr}
+\end{figure}
+
+Par exemple, \citet{yuan11} définit une méthode de régions de confiance où le sous-problème à chaque itération est un problème quadratique de la forme:
+
+\begin{equation}\label{sous_pb_trust_sqp}
+    \left\{\begin{aligned}
+    \underset{p}{\min} &\|r(x_k)+J(x_k)p\|^2+\dfrac{1}{2}p^TB_kp,\\
+    \textnormal{s.c. }& \|p\|\leq \Delta_k.
+    \end{aligned}\right.
+\end{equation}
+
+où $B_k$ est une certaine matrice définie à chaque itération en fonction des données et paramètres du problème.
+
+\section{Bilan sur l'état de l'art}
+
+L'état de l'art présenté ici dresse un aperçu des grandes familles de méthodes principalement utilisées dans la résolution des problèmes de moindres carrés. 
+\'Etant donné que l'algorithme sur lequel je travaille date des années 80, je me suis surtout concentré sur des ouvrages datant de la même époque, 
+ou à peu près, afin de mieux comprendre les liens et différences entre ces différentes méthodes.
+
+De plus, comme je n'étais pas familier avec les problèmes de moindres carrés, lire des articles présentant les principes généraux de ces méthodes m'a également fait
+monter en compétences rapidement sur ce type de problèmes. Cela me permettra notamment de m'intéresser à des articles présentant des méthodes plus complexes 
+comprenant des variations par rapport à celles présentées dans cet état de l'art, comme c'est par exemple le cas pour les méthodes proposées par~\citet{orbansiq20} 
+et~\citet{audicatoni11}.
+
+Un autre axe de travail important sera, lorsque je commencerai à travailler à l'amélioration proprement dite de l'algorithme ENLSIP utilisé par \HQ, 
+d'orienter mes recherches 
+sur des approches de type primal-dual, comme par exemple celle exposée par~\citet{andreas02} pour une méthode de points intérieurs. 
+
+Cette dernière est par ailleurs implémentée dans le solveur IPOPT, qui a été utilisé pour comparer les performances de mon implémentation en Julia (voir section~\ref{implementation:resultats}). 
+Ce type de méthodes a l'avantage de mieux tirer parti des contraintes et des multiplicateurs de Lagrange, comparativement à ce qui est fait dans ENLSIP.

@@ -1,0 +1,861 @@
+\chapter{Description de la méthode d'ENLSIP}\label{Travail}
+\markright{Description de la méthode d'ENLSIP}
+ 
+
+L'analyse approfondie des articles de~\citet{lindstromwedin1984,lindwedin88} sur la méthode d'ENLSIP (Easy Nonlinear Least Squares Inequality Programming), 
+ainsi que du code source de l'algorithme écrit en Fortran77 par ces derniers, m'a permis de comprendre le fonctionnement de cette méthode d'optimisation. Ce chapitre, réalisé sur recommandation de mon maître de stage, 
+relate la modélisation des principaux aspects théoriques de l'algorithme. 
+
+
+\section{Principe général}\label{travail:principe_general}
+
+On se place dans le cadre où le problème d'optimisation à résoudre est celui présenté en~\eqref{pb_general}, soit de moindres carrés non linéaires sous contraintes .
+Tout d'abord, il s'agit d'une méthode itérative avec longueur de pas. On rappelle que cela consiste, en partant d'un point de départ $x_0$, à construire une suite
+d'itérés $(x_k)_{k\in \mathbb{N}}$ convergeant vers la solution du problème et chaque nouvel itéré $x_{k+1}$ est construit à partir du précédent par la relation:
+
+\[x_{k+1}=x_k+\alpha_kp_k,\]
+
+avec:
+\begin{description}
+    \item[\textbullet] $p_k\in\real^n$ la direction de descente;
+    \item[\textbullet] $\alpha_k\in\real$ la longueur de pas.
+\end{description}
+
+Ces deux grandeurs sont calculées à chaque nouvelle itération.
+
+Un autre aspect important de la méthode concerne la gestion des contraintes. Ce point particulier est d'ailleurs une des spécificités d'ENLSIP. En effet, comme vu au 
+chapitre~\ref{edart}, la prise en compte des contraintes de tout type sans hypothèses particulières, hormis la différentiabilité de ces dernières, est 
+relativement rare dans la littérature sur les problèmes de moindres carrés. Cela était d'autant plus le cas dans les années 1980, lors de la période de conception de 
+cet algorithme.
+
+Dans ENLSIP, les auteurs,~\citet{lindwedin88} ont mis en place une approche dite EQP, pour Equality Quadratic Programming, inspirée des travaux de~\citet{gillmurray1985}
+sur des problèmes d'optimisation quadratique sous contraintes d'inégalité linéaires. Ce procédé consiste à ne travailler à chaque itération qu'avec des contraintes d'égalité.
+Nous verrons en~\ref{direction_descente} comment on peut alors se ramener à la résolution de systèmes d'équations linéaires. 
+
+\`A chaque itération, on considère un ensemble réduit de contraintes que l'on estime être actives à la solution optimale $x^*$, c'est-à-dire égales à $0$. Ce dernier est constitué de toutes les contraintes d'égalité
+ainsi que de certaines inégalités. Cette prédiction est mise à jour au début de chaque itération par le retrait ou l'ajout potentiel d'une contrainte d'inégalité 
+à cet ensemble. L'objectif de cette man\oe uvre est qu'à mesure que l'on se rapproche de la solution du problème, la prédiction converge vers les contraintes effectivement actives. 
+
+Cet ensemble est noté $\mathcal{W}$, pour working-set, et comprend les indices des contraintes considérées comme actives à la solution. Nous verrons en~\ref{update_actives}
+comment s'effectue l'ajout ou le retrait d'une contrainte et les implications sur la méthode. L'algorithme~\ref{algo:model enlsip} présente les grandes étapes de 
+la méthode implémentée dans ENLSIP.
+
+\begin{algorithm}
+    \caption{Modèle de l'algorithme ENLSIP}
+    \label{algo:model enlsip}
+    \begin{algorithmic}
+        \REQUIRE $x_0:=$ point initial
+        \STATE $k\leftarrow 0$
+        \STATE Initialisation de l'ensemble actif
+        \REPEAT
+        \STATE Mise à jour de l'ensemble actif $\mathcal{W}$
+        \STATE Calcul de la direction de descente $p_k$
+        \STATE Calcul de la longueur de pas $\alpha_k$
+        \STATE $x_{k+1} \leftarrow x_k+\alpha_kp_k$
+        \STATE $k \leftarrow k+1$
+        \UNTIL{critère d'arrêt}
+        \RETURN $x_k$
+    \end{algorithmic}
+\end{algorithm}
+
+Les notations utilisées dans la suite de ce chapitre pour les différentes modélisations mathématiques sont celles du chapitre~\ref{edart}.
+
+\section{Calcul de la direction de descente}\label{direction_descente}
+
+\`A une itération $k$ donnée, partant du point $x_k$ qui est fixé, la direction de descente $p_k$ est calculée par la résolution d'un problème de type:
+
+\begin{equation} \label{pb egalites}
+    \left\{ \begin{aligned}
+      &\underset{p \in \mathbb{R}^n}{\min}\ \dfrac{1}{2}\|r(x_k+p)\|^2, & \\ 
+      &\textnormal{s.c.}  \\
+      &c(x_k+p) = 0. \\
+    \end{aligned} \right. 
+\end{equation}
+
+La multi-fonction $c$ modélise ici $t\in\mathbb{N}^*$ contraintes d'égalité. On note $A$ sa matrice jacobienne au point $x_k$.
+Bien que le problème initial~\eqref{pb_general} puisse présenter des contraintes d'inégalité, nous verrons dans la section\ref{update_actives} comment ces dernières sont manipulées
+afin de se ramener au cas où toutes les contraintes sont des égalités.
+
+\subsection{Linéarisation du problème}\label{linearisation_gn}
+
+La méthode mise en place par~\citet{lindwedin88} est une approche de type Gauss-Newton, telle que présentée à la section~\ref{edart:method_gn} mais appliquée ici au cas 
+sous contraintes. On s'appuie toujours sur la linéarisation des résidus comme en~\eqref{linear_res} mais également
+sur celle des contraintes, donnée par:
+\[c(x_k+p) \approx Ap+c(x_k).\]
+
+Ces deux linéarisations amènent à reformuler le problème~\eqref{pb egalites} comme un problème sous contraintes linéaires:
+
+\begin{equation} \label{pb egalites linearise}
+    \left\{ \begin{aligned}
+      &\underset{p \in \mathbb{R}^n}{\min}\ \dfrac{1}{2}\|Jp+r(x_k)\|^2, & \\ 
+      &\textnormal{s.c.}  \\
+      &Ap+c(x_k) = 0. \\
+    \end{aligned} \right. 
+\end{equation}
+
+\subsection{Décomposition en sous-systèmes}
+
+Le c\oe ur du calcul de la direction descente réside dans l'utilisation de la décomposition matricielle QR.
+On souhaite d'abord factoriser la matrice $A$ de taille $t \times n$, $(t\leq n)$ en passant par la factorisation QR de sa transposée:
+
+\begin{equation} \label{qrAt}
+A^{T}P_{a}=Q_{a}
+\begin{pmatrix}
+R_{a} \\
+0
+\end{pmatrix},
+\end{equation}
+
+avec: 
+\begin{itemize}
+\item
+$Q_{a}\text{ matrice orthogonale } (n\times n)$;
+\item
+$ R_{a} \text{ matrice triangulaire supérieure } (t \times t)$ à éléments diagonaux décroissants en valeur absolue;
+\item
+$P_{a} \text{ matrice de permutation } (n\times n)$.
+\end{itemize}
+
+
+Comme $P_{a}$ est une matrice de permutation, $P_a^{-1}=P_a^T$ et~\eqref{qrAt} se récrit:
+\begin{equation}\label{lqA}
+A = P_{a}
+\begin{pmatrix}
+L_{a}\ ,\ 0
+\end{pmatrix}
+Q_{a}^{T},
+\end{equation}
+où $L_{a}=R_{a}^{T}$ est une matrice triangulaire inférieure $(t \times t)$ à éléments diagonaux décroissants en valeur absolue.
+
+Injectant cette factorisation dans \eqref{pb egalites linearise}, nous obtenons: 
+\[
+Ap = -c(x_{k}) \Longleftrightarrow P_{a}\begin{pmatrix}
+L_{a} \ , \ 0
+\end{pmatrix}
+Q_{a}^{T}p = -c(x_{k}).
+\]
+
+Posant $Q_{a}^{T}p = \begin{pmatrix}
+p_{1} \\ p_{2}
+\end{pmatrix}$ avec $p_{1} \in \real^{t}$ et $p_{2} \in \real^{n-t}$ , on a:
+\[
+P_{a}L_{a}p_{1} = -c(x_{k}) \Longleftrightarrow L_{a}p_{1} = -P_{a}^{T}c(x_{k}) = b.
+\]
+On remarque que $p_{1}$, soit les $t$ premiers éléments de $p$, est totalement déterminé par les contraintes tandis que $p_{2}$, soit les $n-t$ derniers éléments de $p$, peut être choisi librement. 
+Cela se comprend en introduisant l'espace nul de $A$. Notons $Y$ le bloc des $t$ premières colonnes de $Q_{a}$ et $Z$ celui des $n-t$ dernières colonnes de $Q_{a}$. On remarque que $AZ=0$ d'où:
+
+$$
+Ap = AQ_{a} \begin{pmatrix}
+p_{1}\\p_{2}
+\end{pmatrix}=AYp_{1}.
+$$
+
+La stratégie va donc désormais consister à calculer $p_{1}$, entièrement déterminé par les contraintes puis, une fois $p_{1}$ fixé, de calculer $p_{2}$ de sorte à minimiser 
+la fonction objectif du problème linéarisé \eqref{pb egalites linearise}. 
+
+En injectant $p_{1}$ et $p_{2}$ dans cette dernière, on peut alors décomposer notre problème en deux nouveaux sous-problèmes:
+\[
+\left\{
+\begin{aligned}
+&L_{a}p_{1} = b, \\
+&\underset{p_{2}}{\min} \dfrac{1}{2}\|J_{2}p_{2} + J_{1}p_{1} + r(x_{k})\|^{2},
+\end{aligned}\right.
+\]
+
+en introduisant $JQ_{a} = \begin{pmatrix}
+J_{1}\ & J_{2}
+\end{pmatrix}$ avec $J_{1}$ et $J_{2}$ respectivement de taille $(m\times t)$ et $(m\times (n-t))$.
+
+
+\subsubsection{Résolution avec stabilisation} \label{resolutionavecstab}
+
+Si la matrice $A$ est de rang déficient, il faut réaliser ce qui est appelé dans~\cite{lindwedin88} une stabilisation. Cela passe par la factorisation QR de $L_{a}$: 
+\begin{equation} \label{qrL}
+L_{a}P_{\ell} = Q_{\ell} R_{\ell},
+\end{equation}
+
+avec:
+\begin{itemize}
+\item
+$Q_{\ell}$ matrice orthogonale $(t \times t)$;
+\item
+$R_{\ell}$ matrice triangulaire supérieure $(t \times t)$ à éléments diagonaux décroissants en valeur absolue; 
+\item
+$P_{\ell}$ matrice de permutation $(t \times t)$.
+\end{itemize}
+
+Partant de $L_{a}p_{1}=b$, le système d'inconnue $p_{1}$ devient alors:
+$$ 
+\begin{aligned}
+&Q_{\ell}R_{\ell}P_{\ell}^{T}p_{1}=b\\
+\Longleftrightarrow& R_{\ell}P_{\ell}^Tp_1 = Q_{\ell}^{T}b\\
+\Longleftrightarrow& R_{\ell}P_{\ell}^Tp_1 = b_{1} \text{ avec } b_1 = Q_{\ell}^{T}b.
+\end{aligned}
+$$
+
+Pour $\omega_{1} \leq t$, on définit $R_{\ell}^{(\omega_{1})}$ comme la sous-matrice de $R_{\ell}$ constituée des éléments $r_{ij}$, avec $i \leq \omega_{1},j \leq \omega_1$. 
+
+Le vecteur $b_{1}^{(\omega_{1})}$  est constitué des $\omega_{1}$ premiers éléments de $b_{1}$.
+
+ Par suite, on pose $\delta p_1^{(\omega_{1})}$ la solution du système triangulaire d'inconnue $y$:  
+ $$R_{\ell}^{(\omega_{1})}y=b_{1}^{(\omega_{1})}.$$
+ 
+ On obtient alors:
+
+\begin{equation}\label{calcul p1}
+p_1 = P_{\ell}\begin{pmatrix} \delta p_1^{(\omega_{1})} \\ 0 \end{pmatrix}.
+\end{equation}
+
+Le vecteur $p_1$ étant désormais calculé, il reste à résoudre pour $p_2$ le sous-problème:
+
+$$\underset{p_2}{\min} \dfrac{1}{2}\|J_2p_2 + (J_1p_1 + r(x_{k}))\|^2.$$ 
+
+Intervient alors la factorisation QR de $J_{2}$:
+\begin{equation} \label{qrJ2}
+J_{2} = Q_2\begin{pmatrix} R_{2} \\ 0\end{pmatrix}P_2,
+\end{equation}
+
+avec:
+\begin{itemize}
+\item
+$Q_2$ matrice orthogonale $(m \times m)$;
+\item
+$R_{2}$ matrice triangulaire supérieure $((n-t) \times (n-t))$ à éléments diagonaux décroissants en valeur absolue; 
+\item
+$P_2$ matrice de permutation $((n-t) \times (n-t))$.
+\end{itemize}
+
+On pose $d_{2} = -Q_2^T(r(x_{k}) + J_1p_1)$ et pour $\omega_{2} \leq n-t$, on définit $R_{2}^{(\omega_{2} )}$ comme le bloc triangulaire supérieur 
+composé des $\omega_{2}$ premières lignes et colonnes de $R_{2}$ et $d_{2}^{(\omega_{2})} $ le vecteur constitué des $\omega_{2}$ premiers éléments de $d_{2}$.
+
+Par suite, posant $\delta p_2^{(\omega_{2})}$ solution de $R_{2}^{(\omega_{2})}y =d_2^{(\omega_{2})}$, on obtient:
+
+\begin{equation}
+p_2 = P_2^T\begin{pmatrix} \delta p_2^{(\omega_{2})} \\ 0 \end{pmatrix}.
+\end{equation}
+
+\subsubsection{Résolution sans stabilisation} \label{resolutionsstab}.
+
+Si la matrice $A$ est de rang plein, on peut résoudre directement le système triangulaire inférieur $L_{a}p_{1}=b$ d'inconnue $p_1$ sans passer par la 
+factorisation QR de $L_a$. 
+Cela revient à adopter le même raisonnement qu'au paragraphe~\ref{resolutionavecstab} sur la matrice $L_a$ avec en particulier $\omega_1=\text{rang}(A)$.
+
+Le vecteur $p_1$ étant désormais fixé, il reste à résoudre pour $p_2$: $$\underset{p_2}{\min} \dfrac{1}{2}\|J_2p_2 + (J_1p_1 + r(x_{k}))\|^2$$
+
+On procède comme dans le cas avec stabilisation en se servant de la factorisation QR de $J_2$.
+
+On pose $d = -Q_2^T(r(x_{k}) + J_1p_1)$ et pour $\omega_{2} \leq n-t$, on définit $R_{2}^{(\omega_{2} )}$ comme le bloc triangulaire supérieur composé 
+des $\omega_{2}$ premières lignes et colonnes de $R_{2}$ et $d^{(\omega_{2})} = (d_1, d_2, \ldots, d_{\omega_{2}})^T$.
+
+Par suite, posant $\delta p_2^{(\omega_{2})}$ solution de $R_{2}^{(\omega_{2})}y =d^{(\omega_{2})}$, on obtient:
+\begin{equation} \label{calculp2}
+p_2 = P_2^T\begin{pmatrix} \delta p_2^{(\omega_{2})} \\ 0 \end{pmatrix}.
+\end{equation}
+
+\subsubsection{Solution du sous-problème}\label{sol sous pb}
+Finalement, dans les deux cas, la solution du problème sous contraintes linéaires~\eqref{pb_lineaire}, déterminée en dimensions $(\omega_{1}, \omega_{2})$ est donnée par: 
+
+\begin{equation}\label{solution p}
+{p^{(\omega_{1},\omega_{2})} = Q_{a} \begin{pmatrix} p_1 \\ p_2 \end{pmatrix}}.
+\end{equation}
+
+Dans le déroulement de l'algorithme, la direction de descente est d'abord calculée en prenant $\omega_1 = \text{rang}(A)$ et $\omega_2 = \text{rang}(J_2)$.
+
+La méthode propose ensuite d'examiner le vecteur alors retourné grâce à la vérification de différents critères, non explicités ici. Leur non satisfaction peut amener à refaire le calcul de la 
+direction de descente en employant une des deux méthodes suivantes:
+\begin{itemize}
+    \item une méthode similaire à celle détaillée ci-dessus mais avec des valeurs spécifiques de $\omega_{1}$ et $\omega_{2}$ dont le calcul est expliqué à la sous-section~\ref{subspace_min};
+    \item une méthode de type Newton présentée à la sous-section~\ref{newtonmethod}.
+\end{itemize}
+
+La première permet de restreindre la recherche de direction de descente à un sous-espace de $\real^n$. La seconde permet théoriquement d'approcher plus vite de 
+la solution si le point courant en est déjà proche.
+
+\subsection{Méthode de Gauss--Newton avec minimisation de sous-espace}\label{subspace_min}
+
+Comme nous l'avons vu aux paragraphes~\ref{resolutionavecstab} et~\ref{resolutionsstab}, le calcul de la direction de descente nécessite les résolutions successives de systèmes
+triangulaires et un choix important porte sur le nombre de colonnes de la matrice triangulaire impliqué dans la résolution. 
+
+Une première solution consiste à prendre le nombre de colonnes correspondant au rang de la matrice. Néanmoins, dans certains cas de figure, il peut s'avérer intéressant 
+de ne considérer qu'un nombre réduit de colonnes pour obtenir une meilleure solution du problème d'optimisation~\eqref{pb egalites}.
+Cela revient, pour chacun des deux systèmes, à restreindre la recherche de solution à des espaces de dimension inférieure au rang des dits systèmes.
+
+On parle alors de minimisation de sous-espace, ou \textit{subspace minimization} chez~\citet{lindwedin88}. Cette méthode ne diffère finalement de la méthode de Gauss--Newton
+présentée en amont que par les valeurs des entiers $\omega_1$ et $\omega_2$ utilisés au paragraphe~\ref{resolutionavecstab}, contrairement à la méthode de Newton présentée à la sous-section~\ref{newtonmethod} 
+qui s'appuie sur un sous-problème différent.
+
+Pour la suite de cette partie, $n$ désigne un entier naturel quelconque et on se place dans le cadre général de la résolution du système linéaire: 
+
+\begin{equation}\label{syst_tri}
+    Tx=y.
+\end{equation}
+
+Ce système est de dimension $n$ et on a:
+
+\begin{itemize}
+    \item $T = [T_{ij}]$ est une matrice triangulaire supérieure $(n \times n)$ et de rang~$\bar{t}>0$;
+    \item $x = (x_1,\ldots,x_n)^T$ est l'inconnue;
+    \item $y =(y_1,\ldots y_n)^T$ est le second membre.
+\end{itemize}
+
+Afin faire le lien avec le paragraphe~\ref{resolutionavecstab}, le calcul de dimension sera appliqué au système $R_{\ell}y=b_{1}$ afin de calculer $\omega_1$ puis au
+système $R_{2}y =d_2$ pour déterminer $\omega_2$.
+
+Pour la suite, on définit également deux vecteurs $\tau = [\tau_i]_{1\leq i\leq \bar{t}}$ et $\rho =[\rho_i]_{1\leq i\leq \bar{t}}$ dont chacune des composantes est respectivement donnée par:
+\begin{align}
+    \tau_i =& \left\|(y_1,\ldots,y_i)^T\right\|, \\
+    \rho_i =& \left\|\left(\dfrac{y_1}{T_{11}},\ldots,\dfrac{y_i}{T_{ii}}\right)^T\right\|.
+\end{align}
+
+
+On peut alors calculer une première dimension déterminée par l'indice $k$, pour $k$ allant de $1$ à $\bar{t}$, maximisant la quantité $\|(\tau_1,\ldots,\tau_k)\|*|T_{kk}|$.
+
+Cet entier, noté $\mindim$, est indiqué par les auteurs comme étant la plus petite dimension possible pour la résolution de~\eqref{syst_tri}.
+
+Le calcul à proprement parler de la dimension du sous-espace se distingue en deux cas, dépendant de la méthode utilisée pour calculer la direction de descente à l'itération
+précédente.
+
+\subsubsection*{Gauss--Newton à l'itération précédente}
+
+Cela concerne le cas où il n'y a pas eu besoin de refaire le calcul de la direction de descente à la précédente itération.
+
+On prend alors comme dimension le plus grand entier $k$, pour $k$ allant de $\mindim$ à $\bar{t}-1$, tel que:
+\[
+    \tau_k < \dfrac{\tau_{\bar{t}}}{5}\ \text{ et }  \rho_k < \dfrac{\rho_{\bar{t}}}{2}.
+\] 
+
+Si un tel entier n'existe pas, on prend le maximum entre $\bar{t}-1$ et $\mindim$.
+
+\subsubsection*{Minimisation de sous-espace à l'itération précédente}
+
+Ce cas-ci s'applique lorsque la direction de descente de l'itération précédente a été calculée en utilisant la méthode de Gauss--Newton mais avec des valeurs de dimensions
+déterminées avec les principes explicités dans cette sous-section~\ref{subspace_min}. La procédure du calcul de la dimension est décrite dans l'algorithme~\ref{algo:presub}.
+Celle-ci consiste à analyser certaines composantes des vecteurs $\tau$ et $rho$ afin de déterminer la dimension la plus adéquate pour l'itération en cours. La valeur
+de la dimension utilisée à l'itération précédente est également prise en compte.
+
+\begin{algorithm}
+    \caption{subspace\_previous$(\tau,\rho,\bar{t},\omega)$}\label{algo:presub}
+    \begin{algorithmic}
+        \STATE $\omega$ est la dimension utilisée pour résoudre le même système à l'itération précédente
+        \STATE $\text{dim} \leftarrow \max(1,\omega-1)$
+        \IF{$\omega > 1$ \AND $10*\rho_{\text{dim}} > \rho_{\bar{t}}$}
+        \RETURN $\text{dim}$
+        \ELSE 
+        \STATE $\text{dim} \leftarrow \omega$
+        \IF{$\rho_{\text{dim}} > 0.7*\rho_{\bar{t}}$ \AND $2*\tau_{\text{dim}}<\tau_{\bar{t}}$}
+        \RETURN $\text{dim}$
+        \ENDIF
+        \ELSIF{$100*\tau_{\text{dim}}<\tau_{\text{dim}+1}$}
+        \RETURN $\text{dim}$
+        \ELSE
+        \STATE $\text{dim} \leftarrow \underset{\omega+1\leq k \leq \bar{t}}{\min}\left\{k \ | \ \rho_k > 0.7 \rho_{\bar{t}}\right\}$
+        \COMMENT{Si un tel indice n'existe pas, on prend la valeur $\bar{t}$}
+        \RETURN $\text{dim}$
+        \ENDIF 
+    \end{algorithmic}
+\end{algorithm}
+
+
+\subsection{Méthode de type Newton}\label{newtonmethod}
+
+\subsubsection{Modèle du sous-problème}
+
+La direction de Newton est calculée via la résolution du problème quadratique sous contraintes d'égalité linéaires:
+
+\begin{equation}
+    \left\{ \begin{aligned}
+        &\underset{p \in \real^{n}}{\min}\left[ \dfrac{1}{2}p^{T}\nabla_{xx}^{2}\mathcal{L}(x_{k},\lambda)p + \nabla f(x_{k})^{T}p\right],\\
+        &\text{s.c.}\\
+        &A p = -c(x_{k}).
+        \end{aligned} \right.
+\end{equation}
+
+
+où $\nabla^{2}_{xx}\mathcal{L}(x,\lambda)$ désigne la matrice hessienne du lagrangien introduit en~\eqref{lagrangien} par rapport à la variable $x$, dont voici le détail de l'expression analytique:
+\[
+\begin{aligned}\nabla_{x}\mathcal{L}(x,\lambda)&=\nabla f(x) - \sum\limits_{i \in \mathcal{W}} \lambda_{i}\nabla c_{i}(x)\\
+&= J^{T}(x)r(x) - \sum\limits_{i=1}^{t} \lambda_{i}\nabla c_{i}(x),\\
+\nabla^{2}_{xx}\mathcal{L}(x,\lambda) &= J^{T}(x)J(x)+ \sum\limits_{i=1}^{m}r_i(x)\nabla^2r_i(x) - \sum\limits_{i=1}^{t}\lambda_i\nabla^2c_{i}(x),
+\end{aligned}
+\]
+
+où $\nabla^2 r_i$ (resp. $\nabla^2 c_i$) désigne la matrice hessienne du $i$-ème résidu (respectivement de la $i$-ème contrainte active).
+
+La justification quant à l'utilisation de ce type de problème pour cette partie de l'algorithme n'a pas été trouvée dans le travail des auteurs, hormis la linéarisation 
+des contraintes que l'on retrouve aussi dans la méthode de Gauss-Newton vue à la sous-section~\ref{linearisation_gn}.
+
+On posera $\Gamma = - \sum\limits_{i=1}^{t}\lambda_i\nabla^2c_i(x_{k}) + \sum\limits_{i=1}^{m}r_i(x_{k})\nabla^2r_i(x_{k})$ pour la suite. 
+
+La matrice $\Gamma$ est symétrique comme combinaison linéaire de matrices symétriques.
+
+On peut alors reformuler le problème sous la forme:
+
+\begin{equation} \label{pb newton}
+ \left\{ \begin{aligned} &\underset{p \in \mathbb{R}^n}{\min} \dfrac{1}{2} p^T\left[J^TJ + \Gamma \right]p + \left[J^Tr(x_{k})\right]^Tp, \\ 
+&\text{s.c.}\\
+&Ap = -c(x_{k}),
+\end{aligned} \right.
+\end{equation}
+
+\subsubsection{Calcul de la direction de Newton}
+
+On suppose connues les factorisations QR des matrices $A$, $L_{a}$ et $J_{2}$, respectivement données en~\eqref{qrAt},~\eqref{qrL} et \eqref{qrJ2}. 
+On a également connaissance du rang de $A$.
+
+Si rang$(A)=t$, soit $b = -P_a^Tc(x_{k})$, l'équation des contraintes s'écrit alors: $$L_{a}p_1 = b.$$ 
+
+\'Etant de rang $t$, ce système triangulaire inférieur se résout directement.
+
+Si rang$(A)<t$, on injecte la factorisation QR de $L_{a}$ dans l'équation des contraintes. Le premier système à résoudre devient alors:
+ \[ R_{\ell}P_{\ell}^Tp_1 = b_1,\]
+ 
+avec $b_{1}=Q_{\ell}^{T}b$. 
+
+Soit $\omega_{r}$  le rang de $R_{\ell}$ , $R_{\ell}^{(\omega_{r})}$ est la sous-matrice de $R_{\ell}$ constituée des éléments $r_{ij}$, avec $i \leq \omega_{r},j \leq \omega_r$. 
+
+Le vecteur $b_{1}^{(\omega_{r})}$  est constitué des $\omega_{r}$ premiers éléments de $b_{1}$.
+
+Le vecteur $\delta p_{1}$ est la solution du système triangulaire supérieur $R_{\ell}^{(\omega_{r})}\delta p_{1} = b_{1}$, ce qui donne:
+\[ p_{1} = P_{\ell} \begin{pmatrix} \delta p_{1} \\ 0 \end{pmatrix}.\]
+
+Le calcul de $p_1$ se révèle similaire à celui fait avec la méthode de Gauss-Newton présenté au paragraphe~\ref{resolutionavecstab}.
+
+Puisque $Q_{a}Q_{a}^T = I_n$, on a:
+\begin{align*}
+&\dfrac{1}{2}p^T\left[J^TJ + \Gamma\right]p + \left[J^Tr(x_{k})\right]^Tp \\
+&= \dfrac{1}{2}p^T\left[Q_{a}Q_{a}^TJ^TJQ_{a}Q_{a}^T + Q_{a}Q_{a}^T\Gamma Q_{a}Q_{a}^T\right]p + \left[J^Tr(x_{k})\right]^TQ_{a}Q_{a}^Tp \\
+&= \dfrac{1}{2}(p_1^T\ p_2^T) \left[Q_{a}^TJ^TJQ_{a} + Q_{a}^T\Gamma Q_{a}\right]\begin{pmatrix} p_1 \\ p_2\end{pmatrix} + \left[(JQ_{a})^Tr(x_{k})\right]^TQ_{a}^{T}p\\
+&= \dfrac{1}{2}(p_1^T\ p_2^T)W\begin{pmatrix}p_1\\p_2\end{pmatrix} + h^T\begin{pmatrix}p_1\\p_2\end{pmatrix} \\
+&= \varphi(p_2),
+\end{align*}
+
+avec $W = Q_{a}^TJ^TJQ_{a} + Q_{a}^T\Gamma Q_{a}$ matrice $n\times n$ symétrique et $h = (J_1\ J_2)^Tr(x_{k}) \in \mathbb{R}^n$. 
+
+\`A $p_1$ fixé, on souhaite minimiser $\varphi$ afin de trouver la solution du problème~\eqref{pb newton}.
+
+On pose ensuite $E =  Q_{a}^TJ^TJQ_{a} = \begin{pmatrix} E_{11}\ E_{12} \\ E_{21}\ E_{22} \end{pmatrix}$ avec:
+
+\begin{description}
+\item[\textbullet] $E_{11} \text{ bloc } (t\times t)$;
+\item[\textbullet] $E_{12} \text{ bloc } (t\times (n-t))$;
+\item[\textbullet] $E_{21}\text{ bloc } ((n-t)\times t)$;
+\item[\textbullet] $E_{22}\text{ bloc }\ ((n-t)\times (n-t))$.
+\end{description}
+
+On applique le même découpage à $W$, soit $W = \begin{pmatrix} W_{11}\ W_{12} \\ W_{21}\ W_{22} \end{pmatrix}$. 
+
+Les matrices $E$ et $W$ sont évidemment symétriques et plus particulièrement, on a $W_{12}^T = W_{21}$.
+
+On peut alors récrire, pour $v \in \real^{n-t}$: \[\varphi(v) = \dfrac{1}{2} \left[2v^TW_{21}p_1 + v^TW_{22}v\right] + v^TJ_2r(x_{k}) + K\] avec $K$ indépendant de $v$. 
+
+Par suite:
+\[ \begin{aligned}\nabla \varphi(v) &= W_{21}p_1 + W_{22}v + J_2r(x_{k}), \\
+\nabla^2 \varphi(v) &= W_{22} \end{aligned}.\]
+
+Si $W_{22}$ est définie positive, le minimum de $\varphi$ s'obtient en annulant simplement son gradient. 
+
+Le vecteur $p_{2}$ est alors donné par la résolution du système d'inconnue $v$: $$W_{22}v = -W_{21}p_{1} -  J_2r(x_{k})$$ 
+
+Supposant $W_{22}$ définie positive, on utilise la factorisation de Cholesky~\cite{goluvanl13} de $W_{22}$ pour se ramener à la résolution de deux systèmes triangulaires consécutifs,
+amenant au calcul explicite de $p_2$.
+
+La solution du problème~\eqref{pb newton}, est finalement donnée par:
+\begin{equation} 
+    p = Q_{a}\begin{pmatrix}p_{1}\\ p_{2} \end{pmatrix}.
+\end{equation}
+
+Si $W_{22}$ n'est pas définie positive, alors la direction de descente n'est pas calculée dans l'itération en cours.
+
+\section{Mise à jour des contraintes actives}\label{update_actives}
+
+Afin de gérer les contraintes,~\citet{lindwedin88} ont mis en place une stratégie amenant à ne prendre en compte que certaines contraintes et de les 
+modéliser comme des contraintes d'égalité. Cela n'est pertinent que pour les contraintes d'inégalité, les égalités devant par définition être actives à la solution.
+
+\subsection{Critère de suppression d'une contrainte} \label{criteresupr}
+
+Au début de chaque itération de l'algorithme, on calcule une estimation des multiplicateurs de Lagrange associés aux contraintes de l'ensemble de travail $\mathcal{W}$ de 
+l'itération précédente. Suite à l'analyse des valeurs de ces derniers, on décide ou non de retirer au plus une contrainte de $\mathcal{W}$.
+
+Le critère de sélection des contraintes s'inspire de la stratégie d'ensemble actif EQP~\cite{gillmurray1985}. 
+
+Dans cette approche, les multiplicateurs de Lagrange ne sont pas nécessairement réalisables, c'est-à-dire qu'il peut exister une contrainte d'inégalité d'indice $s$ 
+pour laquelle $\lambda_{s}<0$.  
+
+Si notre estimation des multiplicateurs de Lagrange comporte une ou plusieurs composantes négatives, on décide alors de retirer une des contraintes associées à 
+l'une de celles-ci. 
+
+En pratique, on choisit celle dont le multiplicateur est le plus petit, i.e. le plus grand en valeur absolue, parmi ceux qui sont strictement négatifs:
+\[|\lambda_{deleted}| = \underset{j\in\mathcal{W}}{\max}\ \left\lbrace |\lambda_j| \text{ si }\lambda_j <0 \text{ et }c_j\text{ inégalité}\right\rbrace.\]
+
+Selon~\citet{gillmurray1985}, ce choix permet en pratique de calculer des directions de descente faisant plus fortement diminuer la fonction objectif.
+
+Cette contrainte que l'on supprime de $\mathcal{W}$ est alors considérée inactive et n'intervient pas dans les calculs relatifs à la direction de descente.
+
+\subsection{Calcul des multiplicateurs de Lagrange}
+
+Supposons que nous sommes en début d'itération $k$, l'ensemble de travail est inchangé par rapport à l'itération précédente.
+
+La première estimation des multiplicateurs de Lagrange se fait en résolvant pour $\lambda$ le système~\eqref{systeme mult}:
+
+\begin{equation}\label{systeme mult}
+    A^T\lambda = \nabla f(x_k).
+\end{equation}
+
+On résout ce système en utilisant la factorisation QR de $A^{T}$, afin de réécrire le système triangulaire supérieur d'inconnue $v = P_{a}^{T}\lambda$:
+
+$$ R_{a}v = Q_{a}^T\nabla f(x).$$
+ 
+Notre première estimation des multiplicateurs de Lagrange est alors $\lambda=P_{a}v$. On procède comme décrit en \ref{criteresupr} afin de déterminer quelle contrainte retirer de $\mathcal{W}$. 
+On parle de première estimation car dans le cas où celle-ci n'implique aucune suppression de contrainte, on effectue une nouvelle estimation, supposée meilleure.  
+Le vecteur alors obtenu est également passé au crible de notre critère de sélection.
+
+Avant de réaliser cette seconde estimation, il faut calculer la direction de descente $p_{GN}$ avec la méthode de Gauss-Newton en travaillant avec l'ensemble actif courant, 
+auquel aucune contrainte n'a pour le moment été retirée.
+
+La seconde estimation des multiplicateurs de Lagrange est alors la solution du système:
+\begin{equation}
+A^T\lambda = J^T\left[Jp_{GN} + r(x_{k})\right].
+\end{equation}
+
+Notons que le terme de droite peut aussi s'écrire $J^{T}Jp_{GN} + \nabla f(x_{k})$.
+
+On résout ce système de façon analogue à celle de la première estimation. 
+
+Si aucune contrainte n'est à supprimer, on laisse l'ensemble actif inchangé. Sinon, on retire la contrainte de $\mathcal{W}$ et la ligne correspondant 
+à cette contrainte de $A$. 
+Cette dernière matrice étant modifiée, toutes les décompositions QR qui en découlent le sont également. Leur mise à jour est donc impérative pour la suite de l'algorithme.
+Cela se fait par un procédé développé chez~\citet{goluvanl13} faisant appel à des rotations de Givens.
+
+Suite à ces opérations matricielles, on modélise toutes les contraintes comme des égalités et on peut initier le calcul de la direction de descente présenté à la section~\ref{direction_descente}.
+
+Si au nouvel itéré obtenu, une contrainte est ou bien violée, i.e. strictement négative dans notre cas, ou bien nulle, celle-ci est ajoutée à l'ensemble actif.
+Ce critère est évalué à chaque fin d'itération.
+
+\subsection{Mise à jour de la factorisation QR}
+
+La mise à jour de l'ensemble actif à chaque itération peut entraîner la modification de la matrice jacobienne des contraintes actives $A$. En effet, 
+retirer une contrainte de l'ensemble $\mathcal{W}$ entraîne la suppression des coefficients de la ligne de $A$ associés à cette contrainte. 
+On note $\tilde{A}$ la matrice obtenue en retirant la ligne $s$ de $A$, $s$ étant donc l'indice de la contrainte supprimée lors de l'itération $k$. 
+La matrice transposée de $\tilde{A}$ devient alors:
+
+\begin{equation}\label{eq:modif_AT}
+    \tilde{A}^T=\begin{bmatrix}
+        \nabla c_1(x_k) & \ldots & \nabla c_{s-1}(x_k) & \nabla c_{s+1}(x_k) &\ldots&  \nabla c_t(x_k)
+    \end{bmatrix} \in \real^{n\times (t-1)}.
+\end{equation}
+
+La factorisation QR de $A^T$ exposée en~\eqref{qrAt} n'est alors plus valable pour $\tilde{A}^T$, d'où la nécessité de mettre à jour cette dernière. Une première 
+solution pourrait être de calculer la décomposition QR de la nouvelle matrice en appliquant à $\tilde{A}^T$ la même méthode de calcul que celle réalisée sur $A^T$. On construirait alors 
+entièrement de nouveaux facteurs $\tilde{Q}_a$, $\tilde{R}_a$, et $\tilde{P}_a$ tel que: 
+
+\begin{equation}\label{qr_at_tilde}
+    \tilde{A}^{T}\tilde{P}_{a}=\tilde{Q}_{a}
+\begin{pmatrix}
+\tilde{R}_{a} \\
+0
+\end{pmatrix},
+\end{equation}
+
+avec donc: 
+\begin{description}
+\item[\textbullet]
+$\tilde Q_{a} \in \real^{n\times n}$ matrice orthogonale;
+\item[\textbullet]
+$\tilde R_{a} \in \real^{(t-1)\times (t-1)}$ triangulaire supérieure et à éléments diagonaux décroissants en valeur absolue;
+\item[\textbullet]
+$\tilde P_{a} \in \real^{(t-1)\times (t-1)}$ matrice de permutation.
+\end{description}
+   
+ Néanmoins, les deux matrices $A$ et $\tilde{A}$ ne différant que d'une colonne, il est possible de travailler directement sur les composantes $Q_a$, $R_a$ et $P_a$ de~\eqref{qrAt} et 
+ de modifier ces dernières pour obtenir les facteurs de la décomposition~\eqref{qr_at_tilde}. Comme on dispose déjà de la factorisation QR de $A^T$, cette stratégie 
+ s'avère avantageuse en termes de complexités temporelle et spatiale, l'opération de décomposition étant assez co\^uteuse en temps de calcul et en allocation 
+ d'espace mémoire.
+
+ La nouvelle permutation des colonnes se déduit facilement de l'ancienne. En effet, retirer une colonne de $A^T$ ne change pas pour autant l'ordonnancement global des colonnes
+ de $\tilde A^T$. Il s'agit donc d'ajuster la matrice $P_a$ afin que l'ordre de permutation des colonnes de $\tilde A^T$ préserve celui des colonnes de $A^T$.
+
+\textbf{Exemple:} Pour $t=4$, prenons la permutation $(4,2,1,3)$, revenant à avoir la matrice de permutation:
+ \[P_a = \begin{bmatrix}
+     0 & 0 & 1 & 0 \\
+     0 & 1 & 0 & 0 \\
+     0 & 0 & 0 & 1 \\
+     1 & 0 & 0 & 0
+ \end{bmatrix}.\]
+
+ Si l'on supprime la deuxième colonne de $A^T$, i.e. $s=2$, la même permutation mais adaptée devient:
+
+ \[\tilde P_a = \begin{bmatrix}
+     0 & 1 & 0\\
+     0 & 0 & 1\\
+     1 & 0 & 0
+ \end{bmatrix}.\]
+
+Le prochain exemple présenté est directement tiré des travaux de~\cite{goluvanl13}.
+
+On se place ici dans le cas où $n=7$, $t=6$, $s=3$.
+
+
+La matrice de Hessenberg $H$ correspond à la matrice $R_a$ amputée de sa colonne $s$. 
+
+\begin{equation*}
+    Q_a\tilde A^T\tilde P_a =
+    \begin{bmatrix}
+        \times & \times& \times & \times &\times \\
+        0 & \times& \times& \times &\times \\
+        0 & 0& \times& \times &\times \\
+        0 & 0& \times& \times &\times \\
+        0 & 0& 0& \times &\times \\
+        0 & 0& 0& 0 &\times \\
+        0 & 0& 0& 0 &0 \\
+    \end{bmatrix} = H.
+\end{equation*}
+
+Les éléments sous-diagonaux $h_{s+1,s},\ldots, h_{t,t-1}$ peuvent être annulés
+par l'application de rotations de Givens successives $G_{t-1}^T\ldots G_s^TH = \tilde R_a$. La rotation $G_i$ agit sur les colonnes $i$ et $i+1$. Ainsi, 
+posant $\tilde Q_a = Q_a G_s\ldots G_{t-1}$, la factorisation QR de $\tilde A^T$ est donnée par:
+
+\begin{equation}
+    \tilde A^T\tilde P_a = \tilde Q_a \tilde R_a.
+\end{equation}
+
+\section{Calcul de la longueur de pas}\label{calcul_pas}
+
+On considère que la direction de descente $p_{k}$ a été calculée et on souhaite maintenant déterminer la longueur de pas. 
+
+On introduit alors la fonction de mérite: 
+\begin{equation} \label{meritfunction}
+\psi(x,w) = \dfrac{1}{2}\|r(x)\|^2 +  \dfrac{1}{2}\sum_{i \in \mathcal{W}} w_ic_i(x)^2 + \dfrac{1}{2} \sum_{j \in \mathcal{I}} w_j\min(0,c_j(x))^2,
+\end{equation}
+
+où $w \in \real^{l}$ désigne le vecteur de pénalités dont chacune des composantes est associée à une contrainte. Leurs valeurs seront définies dans la section suivante.
+L'ensemble $\mathcal{I}$ comprend les indices des contraintes inactives, c'est-à-dire qui ne sont pas dans l'ensemble de travail $\mathcal{W}$.
+
+\`A l'itération $k$, le point courant $x_{k}$, la direction de descente $p_{k}$ et les pénalités $w^{(k)}$ sont fixés. La longueur de pas est alors définie comme:
+\begin{equation}
+\alpha_{k} = \underset{\alpha \in [\alpha_{min},\alpha_{max}]}{\text{argmin}} \psi\left(x_{k}+\alpha p_{k},w^{(k)}\right),
+\end{equation}
+
+avec $\alpha_{max} = \underset{i \in \mathcal{I}}{\min}\left\{-\dfrac{c_i(x_{k})}{\nabla c_i(x_{k})^Tp_{k}} \text{ pour }i \text{ tel que } \nabla c_i(x_{k})^Tp_{k} < 0 \right\}$. 
+
+Si un tel minimum n'existe pas, on prend $\alpha_{max} = 3$. 
+
+On définit ensuite $\alpha_{min}=\alpha_{max} / 3000$.
+
+On note $\phi: \alpha \mapsto \psi(x_{k}+\alpha p_{k},w^{(k)})$ pour la suite.
+
+\subsection*{Calcul des pénalités} \label{calcul poids}
+
+Introduites à la section précédente dans la fonction de mérite, ces pénalités servent à diriger la recherche du pas minimisant au mieux la fonction objectif 
+tout en se maintenant dans un espace où les contraintes restent satisfaites et les linéarisations sont valables. 
+En effet, si on choisit $\alpha$ tel les termes associés aux contraintes sont non nuls, alors la valeur de la fonction de mérite~\eqref{meritfunction} va 
+être importante. De plus, certaines contraintes seront violées.
+Ainsi, en minimisant la fonction $\phi$, on favorise les longueurs de pas qui maintiennent la satisfaction des contraintes.
+
+Le calcul des pénalités est réalisé à chaque itération avant de commencer celui du pas et fait l'objet d'un problème d'optimisation. Je ne suis néanmoins pas parvenu
+à comprendre la justification théorique de l'utilisation de la formulation du problème présenté en~\eqref{pb poids}. C'est pourquoi la modélisation présentée ici
+s'appuie sur les informations que j'ai pu extraire du code source d'ENLSIP en Fortran77.
+
+La description de cette partie de la méthode ENLSIP nécessite l'introduction de certaines grandeurs.
+
+Tout d'abord, le vecteur $\kappa$ est une collection de $4$ différents vecteurs de pénalités. 
+Comme nous le verrons ci-après, le calcul des pénalités fait intervenir celles calculées lors d'itérations précédentes, afin d'obtenir des pénalités de plus en plus 
+grandes à mesure que l'on s'approche de la solution du problème initial~\ref{pb_general}. Seront ainsi fortement défavorisées par ces pénalités les directions de descente 
+s'éloignant de la solution alors que le point courant en est proche.
+
+
+L'intérêt d'un tel vecteur $\kappa$ est de garder une trace des pénalités calculées au cours des itérations précédentes, afin de calculer les nouvelles pénalités 
+$w^{(k)}$ sur la base des plus petites pénalités calculées lors de l'une des $4$ dernières itérations, au lieu de simplement considérer celles de l'itération précédente. 
+En pratique, cela évite d'obtenir dès les premières itérations des pénalités trop importantes, pouvant détériorer la convergence.
+
+En particulier, $w^{(old)}$ est le dernier élément de $\kappa$, i.e. le vecteur contenant les plus petites pénalités calculées au cours des 4 itérations précédentes 
+(le vecteur $\hat{w}^{(old)}\in\real^t$ correspond aux plus petites pénalités associées aux contraintes actives).
+
+On définit également le vecteur $$z=\left[(\nabla c_i(x_{k})^Tp_{k})^2 \right]_{1 \leq i \leq t},$$ ainsi que le réel 
+\[\mu =  \left[\dfrac{|(Jp_{k})^Tr(x_k) + \|Jp_{k}\|^2|}{\delta} - \|Jp_{k}\|^2 \right],\] 
+
+où $\delta$ est une constante valant $0.25$.
+
+Les vecteurs $w^{(old)}$, $z$ et le réel $\mu$ servent à paramétrer le problème d'optimisation à résoudre pour calculer $w_{k}$.
+
+\subsection*{Problème d'optimisation à résoudre}
+
+Le vecteur $w_{k}$ est défini comme la solution du problème: 
+
+\begin{equation}\label{pb poids}
+\left\{ \begin{aligned} 
+&\underset{w \in \real^{l}}{\min} \|w\|, \\
+&\text{s.c.}\\
+&y^{T}\hat{w} \geq \tau \ \left(\text{ou } y^{T}\hat{w} = \tau\right)\\
+&w_i \geq w_i^{(old)}, \text{ pour } 1 \leq i \leq l.
+\end{aligned}\right.
+\end{equation}
+
+Les composantes de $\hat{w}$ désignent celles de $w$ associés aux indices des contraintes actives, $y\in\real^t$ et $\tau\in\real$ sont définis de différentes façons selon les cas. 
+Le calcul de ces derniers est explicité en annexes sous forme d'algorithmes en pseudo-code.
+
+Dans le cas où la première contrainte est une inégalité, alors les composantes de $w^{(k)}$ sont données par: 
+
+\[w_{i}^{(k)} = \max\left(\dfrac{\tau}{\|y\|^{2}}y_{i}, w_{i}^{(old)}\right),\ \text{pour}\ i\in\mathcal{W}.\]
+
+Ceci assure que $y^{T}\hat{w}^{(k)} \geq \tau$.
+
+Pour le cas où la contrainte considérée est une égalité, le principe reste le même sauf que la constante $\tau$ est modifiée lorsqu'il y a des indices 
+$i$ dans $\mathcal{W}$ pour lesquels:
+$$\frac{\tau}{\|y\|^{2}}y_{i} < \hat{w}_{i}^{(old)}.$$
+
+En ce qui concerne les pénalités des contraintes inactives, on choisit la valeur qui leur avait été donnée à l'itération précédente, soit les composantes associées de $w^{(old)}$.
+
+\subsection*{Calcul de la longueur de pas}
+
+Lorsque les pénalités ont été calculées, on cherche à déterminer le point minimisant la fonction $\phi: \alpha \mapsto \psi(x_{k}+\alpha p_{k},w^{(k)})$ 
+ sur l'intervalle $[\alpha_{min},\alpha_{max}]$. On note ce point $\alpha^*$.
+
+L'idée pour le calcul de $\alpha^*$ est, d'au lieu de calculer directement le minimum de $\phi$, de calculer le minimum d'approximations polynomiales successives de $\phi$ l'interpolant en 
+deux, voire trois points selon les configurations. Ces minimisations sont réalisées sur des fonctions quadratiques, pour lesquelles on sait 
+calculer les extrema sur un intervalle donné.
+
+La méthode de calcul de pas, explicitée dans l'article~\cite{lindstromwedin1984}, décrit le cas d'un problème initial sans contraintes, donc sans pénalités, mais le 
+principe de la méthode implémentée dans ENLSIP reste identique. Les grandes étapes de cette dernière sont listées à la figure~\ref{fig:calcul pas}, toutes les minimisations évoquées
+étant faites sur le même intervalle $[\alpha_{min},\alpha_{max}]$.
+
+\begin{figure}
+\begin{enumerate}
+    \item On initialise  $\alpha_0$ à $0$ et $\alpha_1$ à $\max(1,\alpha_{max})$.
+    \item On calcule $\alpha_{2}$, abscisse du minimum de l'interpolation polynomiale de $\phi$ en $\alpha_{1}$ et $\alpha_0$.
+    \item On initialise l'entier $i$ à $1$.
+    \item\label{item:test pas} Si $\phi(\alpha_{i+1})-\phi(0)\leq \dfrac{1}{4}\phi^\prime(0)\alpha_{i+1}$ ou $\phi(\alpha_{i+1}) \leq 0.4*\phi(0)$ aller à \ref{item:final pas}.
+    \item On calcule $\alpha_{i+2}$, abscisse du minimum de la fonction quadratique interpolant $\phi$ en $\alpha_{i+1},\ \alpha_{i}$ et $\alpha_{i-1}$.
+    \item On remplace les valeurs de $\alpha_{i+1},\ \alpha_{i}$ et $\alpha_{i-1}$ respectivement par $\alpha_{i+2},\ \alpha_{i+1}$ et $\alpha_{i}$.
+    \item On incrémente $i$ de $1$.
+    \item Retour à l'étape~\ref{item:test pas}.
+    \item\label{item:final pas} On renvoie la meilleure valeur entre $\alpha_i$ et $\alpha_{i+1}$, soit celle pour laquelle $\phi$ est minimale.
+\end{enumerate}
+\caption{Algorithme de recherche linéaire pour le calcul du pas}
+\label{fig:calcul pas}
+\end{figure}
+
+Une méthode de type Armijo-Goldstein est utilisée dans le cas où passé un certain nombre d'approximations polynomiales de $\phi$, l'algorithme ne parvient pas 
+à fournir de résultat satisfaisant. La longueur de pas calculée avec cette méthode est cependant moins optimale que celle normalement renvoyée par l'algorithme~\ref{fig:calcul pas}.
+L'implémentation utilisée dans ENLSIP est décrite dans l'algorithme de la figure~\ref{fig:armijo} située en annexes. 
+
+Le critère $\alpha \|p_{k}\| > \varepsilon_{rel}$ \textbf{or} $\alpha > \alpha_{min}$ est évalué sur la valeur renvoyée par la procédure de calcul de la longueur de pas. 
+Si ce critère est satisfait, on retourne la valeur $1$ comme longueur de pas pour l'itération en cours. 
+Cela assure de ne pas renvoyer une longueur de pas trop petite, qui ne diminuerait donc que légèrement la valeur de la fonction objectif. Ce cas se produit 
+notamment lorsque l'on est très proche d'un optimum local.
+
+\subsection*{Construction des polynômes interpolateurs}
+
+Les spécificités de l'implémentation Fortran77 concernent premièrement le cas où l'on approche $\phi$ par un polynôme l'interpolant aux points $0$ et $\alpha_i$, 
+pour $i$ une étape de l'algorithme de la figure~\ref{fig:calcul pas}, fixé. 
+En effet, les coefficients du polynôme interpolateur sont modifiés lorsque l'on considère les contraintes et les pénalités dans la fonction $\phi$.
+
+Les polynômes interpolateurs sont définis de la façon suivante.
+
+Soit $P:\ \alpha \mapsto \dfrac{1}{2}\|v_2\alpha^2 + v_1\alpha + v_0\|^2$ avec $v_0$, $v_1$ et $v_2$ vecteurs de $\real^{(m+t)}$.
+
+On note:
+\[
+F:\ \alpha \mapsto  \begin{pmatrix}
+r_1(x_{k}+\alpha p_{k}) \\
+\vdots \\
+r_m(x_{k}+\alpha p_{k}) \\
+\sqrt{\hat{w}_1}c_1(x_{k}+\alpha p_{k}) \\
+\vdots \\
+\sqrt{\hat{w}_t}c_t(x_{k}+\alpha p_{k})
+\end{pmatrix}.
+\]
+
+Les vecteurs $v_0$, $v_1$ et $v_2$ s'expriment alors comme:
+
+\begin{equation} 
+\begin{aligned}
+    v_0 &= F(0), \\
+    v_1 &= \left[\nabla r_1(x_{k})^Tp_{k},\ldots, \nabla r_m(x_{k})^Tp_{k}, \sqrt{\hat{w}_1}\nabla c_1(x_{k})^Tp_{k}, \ldots, \sqrt{\hat{w}_t}\nabla c_t(x_{k})^Tp_{k} \right]^T,\\
+    v_2 &= \left[ \dfrac{1}{\alpha_i}\left( \dfrac{F_j(\alpha_i) - v_0^{(j)}}{\alpha_i} - v_1^{(j)}\right)\right]_{1 \leq j \leq m+t}^T.
+\end{aligned}
+\end{equation}
+
+Le polynôme $P$ ainsi formé avec les coefficients ci-dessus et interpole la fonction $\phi$ en $0$ et $\alpha_i$. On a également $P^\prime(0)=\phi^\prime(0)$.
+
+
+Ensuite, il est fait mention dans les calculs exposés dans la figure~\ref{fig:calcul pas} notamment de la dérivée de $\phi$ en 0. Or, à cause de la fonction $\min$ dans
+l'expression de la fonction de mérite~\eqref{meritfunction}, $\phi$ n'est pas dérivable sur $\real$. Afin de palier à cela, on considère qu'au voisinage de $0$,
+soit autour du point $x_k$:
+
+\[\phi(\alpha) \approx \dfrac{1}{2}\|r(x_k+\alpha p_k)\|^2 + \dfrac{1}{2}\sum_{i \in \mathcal{W}} w_ic_i(x_k+\alpha p_k)^2=\phi_2(\alpha).\]
+
+Cette approximation revient à négliger le troisième terme de la fonction $\phi$, qui représente les écarts d'irréalisabilité des contraintes inactives.
+
+La fonction $\phi_2$ étant quant à elle trivialement dérivable en 0,
+on peut alors utiliser $\phi_2^\prime(0)$ comme valeur de la dérivée de $\phi$ en $0$.
+
+\section{Critères d'arr\^et}\label{criteres_arret}
+
+
+Les critères d'arrêt sont vérifiés en deux étapes à la fin de chaque itération. D'abord, des critères de convergence sont évalués afin de déterminer si le point courant 
+est solution du problème. Si ce n'est pas le cas, des critères algorithmiques sont examinés pour savoir si l'exécution du programme doit être arrêtée ou non 
+(le nombre d'itérations qui dépasse un seuil maximum fixé par l'utilisateur par exemple). Ces derniers n'ayant pas trait à la méthode d'optimisation en soit, seuls les critères 
+de convergence seront détaillés ici.
+
+
+\subsection*{Conditions nécessaires}
+
+Pour la suite, on note: 
+\begin{itemize}
+    \item $x^*$ le point sur lequel sont analysés les critères de convergence;
+    \item $x_{previous}$ l'itéré précédent $x^*$;
+    \item $p^*$ la dernière direction de descente calculée;
+    \item $\lambda^*$ la dernière estimation des multiplicateurs de Lagrange;
+    \item $\lambda_{min}^*$ est le plus petit multiplicateur de Lagrange positif parmi ceux associés aux contraintes d'inégalité actives;
+    \item $|\lambda_{max}^*|=\underset{i}{\max}\ |\lambda_i|$.
+\end{itemize}
+
+Pour être qualifié de solution potentielle, le point $x^*$ doit vérifier les conditions nécessaires:
+
+\begin{align}
+        & \sum_{i\in \mathcal{W}}c_i(x^*)^2 < \varepsilon_h,\label{cond1}\\
+        & \forall j\notin\mathcal{W}, c_j(x^*) > 0,\label{cond2} \\
+        & \left\|A^T\lambda^* - \nabla f(x^*)\right\| < \sqrt{\varepsilon_{rel}}\left(1+\|\nabla f(x^*)\|\right),\label{cond3} \\
+        & \dfrac{\lambda_{min}^*}{\lambda_{max}^*}\geq \varepsilon_{rel}.\label{cond4}
+\end{align}
+
+Les réels $\varepsilon_{rel},\ \varepsilon_{x},\ \varepsilon_{abs}$ et $\varepsilon_{h}$ désignent des seuils de tolérance pour les critères associés et sont en pratique
+égaux à la précision machine.
+
+Ces critères permettent de vérifier si $x^*$ est bien un point réalisable du problème~\eqref{pb_general}. 
+
+En effet, les conditions~\eqref{cond1}~et~\eqref{cond2} assurent respectivement que les contraintes considérées comme actives le sont effectivement et que les inégalités restantes sont bien strictement positives. 
+Notons que si une inégalité absente de l'ensemble de travail $\mathcal{W}$ est quand même nulle, le point $x^*$ est considéré comme non réalisable.
+
+Les deux suivantes jugent du respect des conditions KKT~\eqref{kkt}. En particulier, la condition~\eqref{cond3} permet de vérifier que l'estimation des multiplicateurs de Lagrange est correcte.
+L'inégalité de la condition~\eqref{cond4} a trait au conditionnement du système~\eqref{systeme mult} et contrôle la validité de la solution $\lambda^*$ d'un point de vue numérique.
+
+\subsection*{Conditions suffisantes}
+
+Si les conditions nécessaires exposées précédemment sont validées, on évalue ensuite les conditions suffisantes: 
+
+\begin{align}
+        & \|d\|^2 \leq \varepsilon_{rel}^2 \|r(x^*)\|^2,\label{cond5} \\
+        & \|r(x^*)\|^2 \leq \varepsilon_{abs}^2,\label{cond6}  \\
+        & \|x_{previous} - x^*\| < \varepsilon_{x}\|x^*\|,\label{cond7}  \\
+        & \dfrac{\|p^*\|}{4} < \sqrt{\varepsilon_{rel}}.\label{cond8} 
+\end{align}
+
+
+Ces conditions indiquent si l'on peut stopper l'exécution de l'algorithme et renvoyer $x^*$ comme solution.
+
+On rappelle que $d$ est le second membre du second système résolu pour calculer la direction de descente. Si la condition~\eqref{cond5} est vérifiée, cela implique que 
+la matrice jacobienne des résidus, autour de $x^*$ est quasiment égale à la matrice nulle et qu'il s'agit donc d'un point stationnaire. La condition~\eqref{cond6} teste si 
+la valeur de la fonction objectif est arbitrairement petite, 0 étant le plus petit minimum potentiellement atteignable dans des moindres carrés. 
+Ces critères sont en pratique rarement satisfaits, les contraintes pouvant empêcher que la solution soit un point stationnaire ou encore le meilleur paramètre possible.
+
+ Les deux autres critères évaluent plutôt si le progrès réalisé entre deux itérations successives est plus ou moins significatif. Cela se caractérise par la 
+ proximité arbitraire de deux itérés successifs~(condition~\eqref{cond7}) ou bien par la faible valeur en norme de la prochaine direction de descente (condition~\eqref{cond8}).
+
+ \section{Commentaires sur la modélisation}
+
+Comme dit en préambule de ce chapitre, la description proposée ici s'est appuyée sur l'analyse approfondie des travaux de~\citet{lindstromwedin1984,lindwedin88}
+et du code source d'ENLSIP. Cependant, le contenu de ces articles s'est parfois avéré éloigné de ce qui était fait en pratique dans l'algorithme. Par exemple,
+le calcul des pénalités décrit dans la section~\ref{calcul poids}, effectivement implémenté dans ENLSIP, n'est pas semblable à celui que l'on retrouve dans~\cite{lindwedin88}.
+Il en va de même pour les critères d'arrêt qui sont bien plus nombreux que ceux de l'article de référence; idem pour le calcul des dimensions dans la méthode de 
+minimisation de sous-espace vue dans la sous-section~\ref{subspace_min}.
