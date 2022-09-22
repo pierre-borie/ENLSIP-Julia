@@ -1,4 +1,5 @@
 using LinearAlgebra, Polynomials, Printf
+using Formatting
 
 
 """
@@ -13,7 +14,7 @@ Summarizes the useful informations about an iteration of the algorithm
 
 * `rx` : vector of size `m`, contains value of residuals at `x` 
 
-* `cx` : vector of size `l`, constains value of constraints at `x`
+* `cx` : vector of size `l`, contains value of constraints at `x`
 
 * `t` : Number of constraints in current working set (ie constraints considered active)
 
@@ -62,6 +63,7 @@ mutable struct Iteration
     cx::Vector{Float64}
     t::Int64
     α::Float64
+    index_α_upp::Int64
     λ::Vector{Float64}
     w::Vector{Float64}
     rankA::Int64
@@ -72,6 +74,8 @@ mutable struct Iteration
     d_gn::Vector{Float64}
     predicted_reduction::Float64
     progress::Float64
+    grad_res::Float64
+    speed::Float64
     β::Float64
     restart::Bool
     first::Bool
@@ -83,7 +87,7 @@ mutable struct Iteration
 end
 
 
-Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code,s.nb_newton_steps)
+Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.index_α_upp, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.grad_res, s.speed, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code,s.nb_newton_steps)
 
 """
     Constraint
@@ -149,13 +153,13 @@ Fields of this structure summarize infos about the qualification of the constrai
 
 * `l` : total number of constraints (i.e. equalities and inequalities)
 
-* `active` :
+* active :
 
     - `Vector` of size `l`
 
     - first `t` elements are indeces of constraints in working set sorted in increasing order, other elements equal `0`
 
-* `inactive` : 
+* inactive : 
 
     - `Vector` of size `l-q`
 
@@ -241,15 +245,11 @@ mutable struct ConstraintsEval <: EvalFunc
     ctrl::Int64
 end
 
-
-"""
-    jac_forward_diff!(x,h,hx,n,m,Jh)
-
-    
-Compute the jacobian of the [`EvalFunc`](@ref) `h` at the current point  by using forward differences
-The result is stored in place in the matrix `Jh`
-"""
-function jac_forward_diff!(x::Vector{Float64},
+# JACDIF
+# Compute the (m x n) jacobian of h(x) at the current point by using forward differences
+# Result is stored in place in the matrix Jh
+function jac_forward_diff!(
+    x::Vector{Float64},
     h::EvalFunc,
     hx::Vector{Float64},
     n::Int64,
@@ -602,13 +602,6 @@ end
 #        i=1
 # where G_i is the hessian of residual r_i(x)
 
-"""
-    newton_search_direction(x,c,r,active_cx,active,n,m,l,t,λ,rx,J,Q1,P1,L11,F_L11,rankA)
-
-``
-\\underset{p \\in \\mathbb{R}^{n}}{\\min}\\left[ \\dfrac{1}{2}p^{T}\\nabla_{xx}^{2}\\mathcal{L}(x_{k},\\lambda)p + \\nabla f(x_{k})^{T}p\\right]
-``
-"""
 function newton_search_direction(
     x::Vector{Float64},
     c::ConstraintsEval,
@@ -725,7 +718,8 @@ function first_lagrange_mult_estimate!(A::Matrix{Float64},
     cx::Vector{Float64},
     scaling_done::Bool,
     diag_scale::Vector{Float64},
-    F::Factorization{Float64})
+    F::Factorization{Float64},
+    iter::Iteration)
 
 
     (t, n) = size(A)
@@ -756,6 +750,9 @@ function first_lagrange_mult_estimate!(A::Matrix{Float64},
 
     # Back transform due to row scaling of matrix A
     if scaling_done λ[:] = λ .* diag_scale end
+
+    # Compute norm of residual
+    iter.grad_res = (isempty(b) ? 0.0 : norm(∇fx[t+1:n]))
     return
 end
 
@@ -832,10 +829,11 @@ function check_constraint_deletion(
     λ::Vector{Float64},
     ∇fx::Vector{Float64},
     scaling::Bool,
-    diag_scale::Vector{Float64})
+    diag_scale::Vector{Float64},
+    grad_res::Float64)
 
-    t = length(λ)
-    δ = 10
+    (t,n) = size(A)
+    δ = 10.0
     τ = 0.5
     sq_rel = sqrt(eps(Float64))
     s = 0
@@ -848,7 +846,7 @@ function check_constraint_deletion(
                 s = i
             end
         end
-        grad_res = norm(A' * λ - ∇fx)
+        
         if grad_res > -e * δ
             s = 0
         end
@@ -861,16 +859,22 @@ end
 
 function evaluate_violated_constraints(
         cx::Vector{Float64},
-        W::WorkingSet)
+        W::WorkingSet,
+        index_α_upp::Int64)
 
     # Data
     ε = sqrt(eps(Float64))
+    δ = 0.1
     added = false
     if W.l > W.t
         i = 1
         while i <= W.l - W.t
             k = W.inactive[i]
-            if cx[k] < ε
+            if k == 39
+                println("c[39] = ",cx[k])
+            end
+            if cx[k] < ε || (k == index_α_upp && cx[k] < δ)
+                println("Added constraint : $k")
                 add_constraint!(W, i)
                 added = true
             else
@@ -878,6 +882,7 @@ function evaluate_violated_constraints(
             end
         end
     end
+    println("[evaluate_violated_constraints] added = ",added)
     return added
 end
 
@@ -954,8 +959,8 @@ function update_working_set(
     λ = Vector{Float64}(undef, W.t)
     ε_rank = sqrt(eps(Float64))
     F_A = qr(C.A',Val(true))
-    first_lagrange_mult_estimate!(C.A, λ, ∇fx, C.cx, C.scaling, C.diag_scale,F_A)
-    s = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale)
+    first_lagrange_mult_estimate!(C.A, λ, ∇fx, C.cx, C.scaling, C.diag_scale,F_A,iter_k)
+    s = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,iter_k.grad_res)
     (m,n) = size(J)
     # Constraint number s is deleted from the current working set
     if s != 0
@@ -999,11 +1004,11 @@ function update_working_set(
             p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
                 second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t)
-                s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale)
+                s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,0.0)
                 if s2 != 0
                     index_s2 = W.active[s2]
                     deleteat!(λ, s2)
-                    deleteat!(C.diag_scale, s)
+                    deleteat!(C.diag_scale, s2)
                     C.cx = C.cx[setdiff(1:end, s2)]
                     delete_constraint!(W, s2)
                     iter_k.del = true
@@ -1027,11 +1032,11 @@ function update_working_set(
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
         if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
             second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t)
-            s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale)
+            s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,0.0)
             if s2 != 0
                 index_s2 = W.active[s2]
                 deleteat!(λ, s2)
-                deleteat!(C.diag_scale, s)
+                deleteat!(C.diag_scale, s2)
                 C.cx = C.cx[setdiff(1:end, s2)]
                 delete_constraint!(W, s2)
                 iter_k.del = true
@@ -1498,6 +1503,7 @@ function search_direction_analys(
     current_iter.dimA = dimA
     current_iter.dimJ2 = dimJ2
     current_iter.code = method_code
+    current_iter.speed = β / previous_iter.β
     current_iter.β = β
     current_iter.p = p
     return error_code
@@ -2314,6 +2320,7 @@ function upper_bound_steplength(
     )
 
     α_upper = Inf
+    index_α_upp = 0
     if norm(inactive, Inf) > 0
         for i = 1:l - t
             j = inactive[i]
@@ -2322,12 +2329,13 @@ function upper_bound_steplength(
                 α_j = -cx[j] / ∇cjTp
                 if cx[j] > 0 && ∇cjTp < 0 && α_j < α_upper
                     α_upper = α_j
+                    index_α_upp = j
                 end
             end
         end
     end
     α_upper = min(3., α_upper)
-    return α_upper
+    return α_upper, index_α_upp
 end
 
 
@@ -2394,7 +2402,7 @@ function compute_steplength(
         # TODO : handle error due to ψ'(0) > 0
 
         # Determine upper bound of the steplength
-        α_upp = upper_bound_steplength(A, cx, p, work_set.inactive, work_set.t, work_set.l, ind_constraint_del)
+        α_upp, index_α_upp = upper_bound_steplength(A, cx, p, work_set.inactive, work_set.t, work_set.l, ind_constraint_del)
         α_low = α_upp / 3000.0
 
         # Determine a first guess of the steplength
@@ -2404,12 +2412,13 @@ function compute_steplength(
         α = linesearch_constrained(x, α0, p, r, c, rx, cx, JpAp, w, m, work_set.l, work_set.t, work_set.active, work_set.inactive, ψ0, dψ0, α_low, α_upp)
 
 
-        # Compiutation of predicted linear progress
+        # Compute the predicted linear progress and actual progress
         uppbound = min(1.0,α_upp)
         atwa = dot(w[active_index],active_Ap.^2)
         iter.predicted_reduction = uppbound * (-2.0 * dot(Jp,rx) - uppbound * dot(Jp,Jp) + (2.0-uppbound^2) * atwa)
 
         # Computation of new point and actual progress
+        # Evaluate residuals and constraints at the new point
         r.ctrl = 1
         c.ctrl = 1
         rx_new = zeros(m)
@@ -2420,9 +2429,15 @@ function compute_steplength(
         iter.progress = 2*ψ0 - dot(rx_new,rx_new) - whsum
         
     else
+        # Take an undamped step
+
         w = w_old
+        α_upp = 3.0
+        index_α_upp = 0
         α = 1.0
     end
+
+    iter.index_α_upp = (index_α_upp != 0 && abs(α - α_upp) > 0.1 ? 0 : index_α_upp)
     return α, w
 end
 
@@ -2517,14 +2532,14 @@ function check_termination_criteria(
 
     exit_code = 0
     alfnoi = ε_rel / (norm(iter.p) + ε_abs)
+    iter.grad_res = norm(transpose(active_C.A) * iter.λ - ∇fx)
 
     # Preliminary conditions
     preliminary_cond = !(iter.restart || (iter.code == -1  && alfnoi <= 0.25))
     if preliminary_cond
 
         # Check necessary conditions
-        grad_res = norm(transpose(active_C.A) * iter.λ - ∇fx)
-        necessary_crit = (!iter.del) && (norm(active_C.cx) < ε_c) && (grad_res < sqrt(ε_rel) * (1 + norm(∇fx)))
+        necessary_crit = (!iter.del) && (norm(active_C.cx) < ε_c) && (iter.grad_res < sqrt(ε_rel) * (1 + norm(∇fx)))
         if W.l - W.t > 0
             inactive_index = W.inactive[1:(W.l - W.t)]
             inactive_cx = cx[inactive_index]
@@ -2571,7 +2586,6 @@ function check_termination_criteria(
         # Check abnormal termination criteria
         x_diff = norm(prev_iter.x - iter.x)
         Atcx_nrm = norm(transpose(active_C.A) * active_C.cx)
-       
         active_penalty_sum = (W.t == 0 ? 0.0 : dot(iter.w[W.active[1:W.t]],iter.w[W.active[1:W.t]]))
         # Criterion 9
         if nb_iter >= max_iter
@@ -2585,7 +2599,7 @@ function check_termination_criteria(
             exit_code = -9
 
         # test if impossible to satisfy the constraints
-        elseif x_diff <= 10.0 * ε_x && Atcx_nrm <= 10.0 * ε_c && active_penalty_sum >= 1.0 
+        elseif x_diff <= 10.0 * ε_x && Atcx_nrm <= 10.0 * ε_c && active_penalty_sum >= 1.0
             exit_code = -10
         end
         # TODO : implement critera 10-11
@@ -2612,8 +2626,8 @@ function output!(
     else
         s_act = " -"
     end
-    speed = (nb_iter == 0 ? 0.0 : iter.β / β_prev)
-    @printf(io, "  %2d  %e  %.2e  %9.2e   %.3e  %2d    %2d   %.2e    %.2e     %.2e    %s\n",  nb_iter, dot(iter.rx, iter.rx), cx_sum, iter.progress, norm(iter.p), iter.dimA, iter.dimJ2, iter.α, speed, maximum(iter.w), s_act)
+    speed = (nb_iter == 0 ? 0.0 : iter.speed) # iter.β / β_prev
+    @printf(io, "  %2d  %e  %.2e  %9.2e   %.3e %3d   %3d   %.2e    %.2e     %.2e    %s\n",  nb_iter, dot(iter.rx, iter.rx), cx_sum, iter.progress, norm(iter.p), iter.dimA, iter.dimJ2, iter.α, speed, maximum(iter.w), s_act)
 end
 
 function final_output!(
@@ -2636,9 +2650,153 @@ function final_output!(
     @printf(io, "\nSquare sum of residuals = %e\n\n", dot(iter.rx, iter.rx))
 end
 
-##### ENLSIP 0.3.0 #####
+function output_iter_for_comparison(
+    io::IOStream,
+    iter::Iteration,
+    W::WorkingSet,
+    nb_iter::Int64,
+    β_prev::Float64,
+    cx_sum::Float64)
+
+    if norm(W.active, Inf) > 0
+        s_act = "("
+        for i = 1:W.t
+            s_act = (i < W.t ? string(s_act, W.active[i], ",") : string(s_act, W.active[i], ")"))
+        end
+    else
+        s_act = " -"
+    end
+    speed = (nb_iter == 0 ? 0.0 : iter.β / β_prev)
+    to_string_e = ( x -> mimic_fortran_e_format(x,5) )
+    @printf(io, "%5d%15s%13s%13s%13s %3d  %3d%13s%13s%13s%13s%13s\n",
+            nb_iter, mimic_fortran_e_format(dot(iter.rx, iter.rx),7),
+            to_string_e(cx_sum), to_string_e(iter.grad_res), to_string_e(norm(iter.p)),
+            iter.dimA, iter.dimJ2, to_string_e(iter.α), to_string_e(speed), to_string_e(maximum(iter.w)),
+            to_string_e(iter.predicted_reduction), to_string_e(iter.progress))
+    print_tabulated_format(io, filter((n-> n>0),W.active), formater= (n -> @sprintf("%4d",n)),
+                           header="       ", line_prefix="       ", separator="",
+                           trailer= "", nb_columns= 50, characters_per_line= 500)
+end
+
+function final_output_for_comparison(
+    io::IOStream,
+    iter::Iteration,
+    W::WorkingSet,
+    exit_code::Int64,
+    nb_iter::Int64,
+    MAX_ITER::Int64,
+    m::Int64,
+    q::Int64,
+    weight_code::Int64,
+    τ, ε_abs, ε_rel, ε_x, ε_c,
+    cx_sum::Float64)
+
+    @printf(io, "\n\nExit code = %8d    Number of iterations = %5d   Speed = %s\n",
+            exit_code, nb_iter, mimic_fortran_e_format(iter.speed,5))
+    @printf(io, " RankA = %4i   P = %4i   RankJ2 = %4i   M = %5i\n",
+            iter.rankA, W.t, iter.rankJ2, m)
+    rx2 = dot(iter.rx, iter.rx)
+    @printf(io, "Square sum of residuals = %s   Sum of squared constraints value = %s\n",
+            mimic_fortran_e_format(rx2,6), mimic_fortran_e_format(cx_sum,6))
+    #print(io,"At point :")
+    #(t -> @printf(io," %e ", t)).(iter.x)
+    print_tabulated_format(io, iter.x, formater=(t -> mimic_fortran_e_format(t,8)),
+                           header="\nAt the point :\n ", line_prefix=" ", separator=" ",
+                           trailer= "\n", nb_columns= 6)
+    #println(io,"\nActive constraints :")
+    #(i -> @printf(io," %d ", i)).(W.active[1:W.t])
+    print_tabulated_format(io, W.active[1:W.t], formater=(i -> @sprintf("%4d", i)),
+                           header="\nActive constraints :\n    ", trailer= "\n", nb_columns= 50)
+    #println(io,"\nConstraint values : ")
+    #(t -> @printf(io, " %.2e ", t)).(iter.cx)
+    print_tabulated_format(io, iter.cx, formater=(t -> mimic_fortran_e_format(t,5)),
+                           header="Constraint values :\n   ", line_prefix="   ", separator=" ",
+                           trailer= "\n", nb_columns= 6)
+    #println(io,"\nPenalty constants :")
+    #(t -> @printf(io, " %.2e ", t)).(iter.w)
+    print_tabulated_format(io, iter.w, formater=(t -> mimic_fortran_e_format(t,5)),
+                           header="Penalty constants :\n   ", line_prefix="   ", separator=" ",
+                           trailer= "\n", nb_columns= 6)
+    @printf(io,"\n\nDefault values\nIPRINT =  %3d\nNOUT =    %3d\nMAXIT = %5d\nNORM =    %3d\n",
+            1, 4, MAX_ITER, weight_code)
+    @printf(io,"TOL    = %s\nEPSREL = %s\nEPSABS = %s\nEPSX   = %s\nEPSH   = %s\n",
+            mimic_fortran_e_format(τ,6),
+            mimic_fortran_e_format(ε_rel,6),
+            mimic_fortran_e_format(ε_abs,6),
+            mimic_fortran_e_format(ε_x,6),
+            mimic_fortran_e_format(ε_c,6))
+
+end
+
+function mimic_fortran_e_format(num, precision_e = 8)
+    str = sprintf1("%"*string(precision_e + 6)*"."*string(precision_e - 1)*"E", num)
+    if (tryparse(Int, str[precision_e + 4:precision_e + 6]) == nothing)
+        println("[mimic_fortran_e_format] bad string to parse: ",
+                "#",str[precision_e + 4:precision_e + 6],"#  from  #",str,"#",
+                " num: ",num," precision: ",precision_e)
+        return "***"
+  else
+    new_exponent = parse(Int, str[precision_e + 4:precision_e + 6]) + ( str[2] == '0' ? 0 : 1)
+    suffix = @sprintf("%+03i", new_exponent) #- il ne faut pas additionner si les chiffres sont tous des zeros -, l'exposant devrait etre zero aussi
+   # en fait il suffit de valider le premier chiffre, il devrait etre non nul.
+    str2 = str[1:1]*"0."*str[2:2]*str[4:precision_e + 3]*suffix
+    return str2
+  end
+end
+
+function print_tabulated_format(
+    io::IOStream,
+    data;
+    formater=(x -> string(x)),
+    header="",
+    line_prefix="",
+    separator="",
+    trailer="",
+    nb_columns=1,
+    characters_per_line=25000)
+    
+    nb_elements = length(data)
+    len_separator = length(separator)
+    index = 0
+    column = 0
+    characters = 0
+    print(io, header)
+    while (index < nb_elements)
+        column += 1
+        index += 1
+        if (index == nb_elements)
+            len_separator = 0
+        end
+        str = formater(data[index])
+        if ( str == nothing )
+            println("[print_tabulated_format] formater returned nothing.",
+                    " data: ",data[index]," formater: ", formater)
+        end
+        if ( (column > nb_columns) |
+                (characters + length(str) + len_separator > characters_per_line) )
+            println(io,"")
+            print(io, line_prefix)
+            characters = length(line_prefix)
+            column = 1
+        end
+        print(io,str)
+        characters += length(str)
+        if (index < nb_elements)
+            print(io,separator)
+            characters += len_separator
+        end
+    end
+    if ( characters + length(trailer) > characters_per_line)
+        println(io,"")
+        print(io, line_prefix)
+    end
+    println(io,trailer)
+end
+
+##### ENLSIP 0.4.0 #####
 
 mutable struct ENLSIP
+    exit_code::Int64
     sol::Vector
     obj_value::Float64
 end
@@ -2698,21 +2856,46 @@ function enlsip(x0::Vector{Float64},
     r::ResidualsEval,c::ConstraintsEval,
     n::Int64,m::Int64,q::Int64,l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
-    ε_abs = 1e-10,ε_rel = 1e-3,ε_x = 1e-3,ε_c = 1e-3)
+    ε_abs = 1e-10,ε_rel = 1e-3,ε_x = 1e-3,ε_c = 1e-3,
+    compare_file::String = "")
 
+    function output_header(io)
+        println(io,"")
+        println(io,"****************************************")
+        println(io,"*                                      *")
+        println(io,"*          ENLSIP-JULIA-0.4.0          *")
+        println(io,"*                                      *")
+        println(io,"****************************************\n")
+        println(io,"Starting point : $x0\n")
+        print_tabulated_format(io, x0, formater=(t -> @sprintf(" %e ", t)),
+                               header="Starting point :\n   ", line_prefix="   ", separator=" ",
+                               trailer= "\n", nb_columns= 10)
+        println(io,"Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)")
+        println(io, "Constraints internal scaling     : $scaling\n")
+        println(io, "\nIteration steps information\n")
+        println(io,"iter     objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
+    end
+
+    function output_header_for_comparison(io)
+        print(io,"ENLSIP-JULIA-0.4.0\n\n")
+        print_tabulated_format(io, x0, formater=(x -> mimic_fortran_e_format(x, 8)),
+                               header="Starting point :\n   ", line_prefix="   ", separator=" ",
+                               trailer= "\n", nb_columns= 6)
+        println(io,"Number of equality constraints   : ",@sprintf("%5i",q))
+        println(io,"Number of inequality constraints : ",@sprintf("%5i",(l-q)))
+        println(io, "Constraints internal scaling     : $scaling\n")
+        println(io, "\nIteration steps information\n")
+        println(io,"iter     objective       cx_sum      grad_res      ||p||    dimA dimJ2   alpha     conv. speed   max weight   predicted    reduction    (working set : following lines)")
+    end
+    
     output_file = "output.txt"
+    do_compare = ! isempty(compare_file) 
     io = open(output_file, "w")
-    println(io,"\n****************************************")
-    println(io,"*                                      *")
-    println(io,"*          ENLSIP-JULIA-0.4.0          *")
-    println(io,"*                                      *")
-    println(io,"****************************************\n")
-    println(io,"Starting point : $x0\n")
-    println(io,"Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)")
-    println(io, "Constraints internal scaling     : $scaling\n")
-    println(io,"iter    objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
-
-
+    io_compare = do_compare ? open(compare_file, "w") : false
+    
+    output_header(io)
+    if (do_compare) output_header_for_comparison(io_compare) end
+    
     nb_iteration = 0
     nb_eval = 0
 
@@ -2730,8 +2913,10 @@ function enlsip(x0::Vector{Float64},
     c(x0, cx, A)
     nb_eval += 1
     # First Iteration
-    first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0., 0., 0., false, true, false, false, 0, 1,0)
-
+    x_opt = x0
+    f_opt = dot(rx,rx)
+    first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, 0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0., 0., 0., 0., 0., false, true, false, false, 0, 1,0)
+    println("Iter 0")
     # Initialization of the working set
     working_set = init_working_set(cx, K, first_iter, q, l)
 
@@ -2785,9 +2970,12 @@ function enlsip(x0::Vector{Float64},
 
     # Print collected informations about the first iteration
     output!(io,first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
+    if (do_compare)
+        output_iter_for_comparison(io_compare,first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
+    end
 
     # Check for violated constraints and add it to the working set
-    first_iter.add = evaluate_violated_constraints(cx, working_set)
+    first_iter.add = evaluate_violated_constraints(cx, working_set,first_iter.index_α_upp)
     active_C.cx = cx[working_set.active[1:working_set.t]]
     active_C.A = A[working_set.active[1:working_set.t],:]
 
@@ -2802,7 +2990,10 @@ function enlsip(x0::Vector{Float64},
     iter.del = false
 
     # Main loop for next iterations
+
     while exit_code == 0
+
+        println("\nIter $nb_iteration\n")
         p_gn = zeros(n)
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
@@ -2838,27 +3029,48 @@ function enlsip(x0::Vector{Float64},
         exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c, error_code)
 
         # Print collected informations about current iteration
-        exit_code == 0 ? output!(io,iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) : final_output!(io,previous_iter, working_set, exit_code, nb_iteration)
+        # Another step is required
+        if (exit_code == 0)
+            # Print collected informations about current iteration
+            output!(io,iter, working_set, nb_iteration, previous_iter.β, active_cx_sum)
+            if (do_compare) output_iter_for_comparison(io_compare, iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) end
+            
+            # Check for violated constraints and add it to the working set
 
-        # Check for violated constraints and add it to the working set
-        iter.add = evaluate_violated_constraints(cx, working_set)
-        active_C.cx = cx[working_set.active[1:working_set.t]]
-        active_C.A = A[working_set.active[1:working_set.t],:]
+            iter.add = evaluate_violated_constraints(cx, working_set, iter.index_α_upp)
+            active_C.cx = cx[working_set.active[1:working_set.t]]
+            active_C.A = A[working_set.active[1:working_set.t],:]
+
+            # Update iteration data field
+            nb_iteration += 1
+            previous_iter = copy(iter)
+            iter.x = x
+            iter.rx = rx
+            iter.cx = cx
+            iter.del = false
+            iter.add = false
+        else
+            # Algorithm has terminated
+            x_opt = x
+            f_opt = dot(rx,rx)
+            final_output!(io, iter, working_set, exit_code, nb_iteration)
+            if (do_compare) final_output_for_comparison(io_compare, iter, working_set,
+                                                        exit_code, nb_iteration,
+                                                        MAX_ITER, m, q, weight_code,
+                                                        sqrt(eps(Float64)), ε_abs, ε_rel, ε_x, ε_c,
+                                                        active_cx_sum) end
+        end
+        flush(io)
 
 
-        nb_iteration += 1
-        previous_iter = copy(iter)
-        iter.x = x
-        iter.rx = rx
-        iter.cx = cx
-        iter.del = false
-        iter.add = false
     end
+
     # Close the IO Stream and print some collected informations
     close(io)
     for s in readlines(output_file)
         println(s)
-    end 
+    end
     rm(output_file)
-    return ENLSIP(iter.x, dot(rx, rx))
+    if (do_compare) close(io_compare) end
+    return ENLSIP(exit_code, x_opt, f_opt)
 end
