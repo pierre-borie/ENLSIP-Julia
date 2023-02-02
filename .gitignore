@@ -330,3 +330,4 @@ Manifest.toml
 
 # Jupyter Notebook
 *.ipynb_checkpoints
+.vscode/settings.json
