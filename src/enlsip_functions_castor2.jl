@@ -1279,8 +1279,12 @@ function subspace_min_previous_step(
         suggested_dim = dim
     else
         i1 = previous_dimR - 1
-        buff = [i for i = i1:previous_dimR if ρ[i] > predb * ρ_prk]
-        suggested_dim = (isempty(buff) ? pseudo_rk : minimum(buff))
+        if i1 <= 0
+            suggested_dim = pseudo_rk
+        else
+            buff = [i for i = i1:previous_dimR if ρ[i] > predb * ρ_prk]
+            suggested_dim = (isempty(buff) ? pseudo_rk : minimum(buff))
+        end
     end
     return suggested_dim
 end
@@ -2913,7 +2917,7 @@ function final_output!(
     println(io, "\nPenalty constants :")
     (t -> @printf(io, " %.2e ", t)).(iter.w)
 
-    @printf(io, "\nSquare sum of residuals = %e\n\n", dot(iter.rx, iter.rx))
+    @printf(io, "\n\nSquare sum of residuals = %e\n\n", dot(iter.rx, iter.rx))
 end
 
 function output_iter_for_comparison(
