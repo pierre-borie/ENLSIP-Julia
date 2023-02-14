@@ -1,4 +1,4 @@
-using LinearAlgebra, Polynomials, Printf
+using LinearAlgebra, Polynomials, Printf, Plots
 using Formatting
 
 
@@ -2793,9 +2793,9 @@ function check_termination_criteria(
 
     # Preliminary conditions
     preliminary_cond = !(iter.restart || (iter.code == -1 && alfnoi <= 0.25))
-    # # println( "[check_termination_criteria] restart : $(iter.restart); code = $(iter.code); alfnoi = $(alfnoi) ")
+    # println( "[check_termination_criteria] restart : $(iter.restart); code = $(iter.code); alfnoi = $(alfnoi) ")
 
-    # # println( "[check_termination_criteria] iter $nb_iter preliminary_cond : ", preliminary_cond)
+    # println( "[check_termination_criteria] iter $nb_iter preliminary_cond : ", preliminary_cond)
     if preliminary_cond
 
         # Check necessary conditions
@@ -2815,17 +2815,18 @@ function check_termination_criteria(
             elseif W.t > 1
                 factor = λ_abs_max
             end
-            # lagrange_mult_pos = [iter.λ[i] for i = W.q+1:W.t if iter.λ[i] > 0]
-            # sigmin = (isempty(lagrange_mult_pos) ? 0 : minimum(lagrange_mult_pos))
+            lagrange_mult_pos = [iter.λ[i] for i = W.q+1:W.t if iter.λ[i] > 0]
+            sigmin = (isempty(lagrange_mult_pos) ? 0 : minimum(lagrange_mult_pos))
             necessary_crit = necessary_crit && (sigmin >= ε_rel * factor)
             # # println( "[check_termination_criteria] iter $nb_iter criterion 3 : ", (sigmin >= ε_rel * factor))
 
         end
 
 
-        # # println( "[check_termination_criteria] iter $nb_iter necessary_crit : ", necessary_crit)
-
+        
+        
         if necessary_crit
+            println( "[check_termination_criteria] iter $nb_iter necessary_crit : ", necessary_crit)
             # Check the sufficient conditions
             d1 = @view iter.d_gn[1:iter.dimJ2]
             x_diff = norm(prev_iter.x - x)
@@ -3026,6 +3027,7 @@ function mimic_fortran_e_format(num, precision_e=8)
     return str
 end
 
+
 function print_tabulated_format(
     io::IOStream,
     data;
@@ -3073,6 +3075,29 @@ function print_tabulated_format(
         print(io, line_prefix)
     end
     println(io, trailer)
+end
+
+function f_var_par(x::Vector, e::Vector,t::Float64)
+    z_opt = 0.4558772 # Osborne 2
+    rx = zeros(m)
+    r.ctrl = 1
+    r(x+t*e,rx,ones(1,1))
+    return dot(rx,rx)/z_opt
+end
+
+function savefig_residuals!(iter::Iteration, nb_iteration::Int64, repo::String="graphes")
+    x_test = iter.x
+    dx_test = iter.p 
+    α_test = iter.α
+    n = length(x_test)
+    Δx = [[k == i ? dx_test[i] : 0 for k =1:n] for i=1:n]
+    f = [t -> f_var_par(x_test,Δx[i],t) - 1 for i=1:n]
+    τ = range(-α_test,α_test,300)
+    plot(τ,f,labels=[α_test*dx_test[1] α_test*dx_test[2] α_test*dx_test[3] α_test*dx_test[4] α_test*dx_test[5] α_test*dx_test[6] α_test*dx_test[7]])
+    ind = @sprintf "%.3d" (nb_iteration-1)
+    name_fig = string(repo,"/graphe_iter_$(ind).png")
+    savefig(name_fig)
+    return
 end
 
 ##### ENLSIP 0.4.0 #####
@@ -3286,6 +3311,13 @@ function enlsip(x0::Vector{Float64},
 
 
     while exit_code == 0
+
+ 
+        # Graphe de l'évolution des rédisus le long de la direction de recherche
+    
+        savefig_residuals!(previous_iter,nb_iteration)
+
+        # println(io_sd, "$nb_iteration $(previous_iter.x) $(previous_iter.p) $(previous_iter.α)")
         # println( "\nIter $nb_iteration\n")
         p_gn = zeros(n)
         # Estimation of the Lagrange multipliers
