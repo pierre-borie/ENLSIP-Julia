@@ -838,10 +838,10 @@ function check_constraint_deletion(
     sq_rel = sqrt(eps(Float64))
     s = 0
     if t > q
-        e = 0
+        e = sq_rel
         for i = q + 1:t
             row_i = (scaling ? 1.0 / diag_scale[i] : diag_scale[i])
-            if row_i * λ[i] <= -sq_rel && row_i * λ[i] <= e
+            if row_i * λ[i] <= sq_rel && row_i * λ[i] <= e
                 e = row_i * λ[i]
                 s = i
             end
@@ -870,9 +870,6 @@ function evaluate_violated_constraints(
         i = 1
         while i <= W.l - W.t
             k = W.inactive[i]
-            if k == 39
-                println("c[39] = ",cx[k])
-            end
             if cx[k] < ε || (k == index_α_upp && cx[k] < δ)
                 println("Added constraint : $k")
                 add_constraint!(W, i)
@@ -964,6 +961,7 @@ function update_working_set(
     (m,n) = size(J)
     # Constraint number s is deleted from the current working set
     if s != 0
+        println("[update_working_set] Constraint deleted : $(W.active[s])")
         # Save s-th element of cx,λ and row s of A to test for feasible direction
         cx_s = C.cx[s]
         A_s = C.A[s,:]
@@ -989,6 +987,7 @@ function update_working_set(
         feasible = (As_p >= -cx_s && As_p > 0)
 
         if !feasible
+            println("[update_working_set] p no feasible")
             insert!(C.cx, s, cx_s)
             insert!(λ, s, λ_s)
             insert!(C.diag_scale, s, diag_scale_s)
@@ -1006,6 +1005,7 @@ function update_working_set(
                 second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t)
                 s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,0.0)
                 if s2 != 0
+                    println("[update_working_set] Second order, Constraint deleted : $(W.active[s2])")
                     index_s2 = W.active[s2]
                     deleteat!(λ, s2)
                     deleteat!(C.diag_scale, s2)
@@ -1025,6 +1025,7 @@ function update_working_set(
         end
     # No first order estimate implies deletion of a constraint
     elseif s == 0
+        println("[update_working_set] no first order deletion")
         Q1 = F_A.Q * Matrix(I,n,n)
         L11, P1 = Matrix(F_A.R'), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
@@ -1034,6 +1035,7 @@ function update_working_set(
             second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t)
             s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,0.0)
             if s2 != 0
+                println("[update_working_set] Second order, Constraint deleted : $(W.active[s2])")
                 index_s2 = W.active[s2]
                 deleteat!(λ, s2)
                 deleteat!(C.diag_scale, s2)
@@ -1598,6 +1600,7 @@ function min_norm_w!(
     nb_pos::Int64)
 
     w[:] = w_old
+    println("[min_norm_w] τ = $τ, pos_index = $pos_index, nb_pos = $nb_pos")
     if nb_pos > 0
         y_sum = dot(y, y)
         y_norm = norm(y)
@@ -1802,11 +1805,15 @@ function penalty_weight_update(
     # Computation of ψ'(0) = [J(x)p] r(x)+   Σ      w_i*[∇c_i(x) p]c_i(x)
     #                                     i ∈ active
     BtwA = 0.0
+    wsum = 0.0
     for i = 1:t
         k = active[i]
         BtwA += w[k] * Ap[i] * cx[k]
+        wsum += w[k]
     end
+    println( "[penalty_weight_update] wsum = ",wsum)
     dψ0 = BtwA + Jp_rx
+    println("[penalty_weight_update] BtwA = $BtwA, Jp_rx = $Jp_rx, dψ0 = $dψ0")
     return w, dψ0
 end
 
@@ -2398,7 +2405,11 @@ function compute_steplength(
         #                                   i ∈ active
         ψ0 = 0.5 * (dot(rx, rx) + dot(w[active_index], cx[active_index].^2))
         # check is p is a descent direction
-        if dψ0 >= 0 error = -1 end
+        if dψ0 >= 0 
+            error = -1 
+            println("[compute_steplength] dérivée positive, error = $error")
+        end
+
         # TODO : handle error due to ψ'(0) > 0
 
         # Determine upper bound of the steplength
