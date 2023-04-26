@@ -1,5 +1,5 @@
-using LinearAlgebra, Polynomials, Printf
-using Formatting
+using LinearAlgebra, Polynomials, Printf, Plots
+using Formatting, DataFrames, CSV
 
 
 """
@@ -87,7 +87,7 @@ mutable struct Iteration
 end
 
 
-Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.index_α_upp, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.grad_res, s.speed, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code,s.nb_newton_steps)
+Base.copy(s::Iteration) = Iteration(s.x, s.p, s.rx, s.cx, s.t, s.α, s.index_α_upp, s.λ, s.w, s.rankA, s.rankJ2, s.dimA, s.dimJ2, s.b_gn, s.d_gn, s.predicted_reduction, s.progress, s.grad_res, s.speed, s.β, s.restart, s.first, s.add, s.del, s.index_del, s.code, s.nb_newton_steps)
 
 """
     Constraint
@@ -122,15 +122,17 @@ end
 
 function evaluate_scaling!(C::Constraint)
 
-    t = size(C.A,1)
+    t = size(C.A, 1)
     ε_float = eps(Float64)
     C.diag_scale = zeros(t)
     for i = 1:t
-        row_i = norm(C.A[i,:])
+        row_i = norm(C.A[i, :])
         C.diag_scale[i] = row_i
         if C.scaling
-            if abs(row_i) < ε_float row_i = 1.0 end
-            C.A[i,:] /= row_i
+            if abs(row_i) < ε_float
+                row_i = 1.0
+            end
+            C.A[i, :] /= row_i
             C.cx[i] /= row_i
             C.diag_scale[i] = 1.0 / row_i
         end
@@ -173,25 +175,33 @@ mutable struct WorkingSet
     active::Vector{Int64}
     inactive::Vector{Int64}
 end
+"""
+    pseudo_rank (diag_T, ε_rank)
 
-# Computes and returns the rank of a triangular matrix T using its diagonal elements placed in decreasing order
-# according to their absolute value
+Computes and returns the rank of a triangular matrix T using its diagonal elements placed in decreasing order
+according to their absolute value using a certain tolerance `tol`
 
-# diag_T is the diagonal of the Triangular matrix T whose rank is estimated
-# τ is the relative tolerance to estimate the rank
+Parameters :
 
-function pseudo_rank(diag_T::Vector{Float64}, τ::Float64=sqrt(eps(Float64)))
-    if isempty(diag_T) || abs(diag_T[1]) < τ
-        r = 0
+* `diag_T` is the diagonal of the Triangular matrix T whose rank is estimated
+* `ε_rank` is a small positive value used to compute `tol`
+    - `tol = l_diag * ε_rank` where `l_diag` is the length of `diag_T`, i.e. 
+    the number of rows of matrix `T`.
+"""
+function pseudo_rank(diag_T::Vector{Float64}, ε_rank::Float64)
+
+    if isempty(diag_T) || abs(diag_T[1]) < ε_rank
+        pseudo_rank = 0
     else
+        l_diag = length(diag_T)
+        tol = abs(diag_T[1]) * sqrt(l_diag) * ε_rank
         r = 1
-        for j in eachindex(diag_T)
-            if max(abs(diag_T[j] / diag_T[1]), abs(diag_T[j])) >= τ
-                r = j
-            end
+        while r < l_diag && abs(diag_T[r]) > tol
+            r += 1
         end
+        pseudo_rank = r - ((r == l_diag && abs(diag_T[r]) > tol) ? 0 : 1)
     end
-    return r
+    return pseudo_rank
 end
 
 
@@ -267,10 +277,11 @@ function jac_forward_diff!(
         h(x_forward, hx_forward, Jh)
 
         if h.ctrl >= -10
-            Jh[:,j] = (hx_forward - hx) / δ_j
+            Jh[:, j] = (hx_forward - hx) / δ_j
         end
     end
     return
+
 end
 
 """
@@ -287,17 +298,18 @@ Compute in place the jacobians `J` and `A` corresponding to the residuals `rx` a
 * `l`is the number of constraints (size of `cx`)
 """
 function new_point!(x::Vector{Float64},
-                    r::ResidualsEval,
-                    rx::Vector{Float64},
-                    c::ConstraintsEval,
-                    cx::Vector{Float64},
-                    J::Matrix{Float64},
-                    A::Matrix{Float64},
-                    n::Int64,
-                    m::Int64,
-                    l::Int64)
+    r::ResidualsEval,
+    rx::Vector{Float64},
+    c::ConstraintsEval,
+    cx::Vector{Float64},
+    J::Matrix{Float64},
+    A::Matrix{Float64},
+    n::Int64,
+    m::Int64,
+    l::Int64)
     r.ctrl = 2
     r(x, rx, J)
+
     if r.ctrl == 0
         # Compute the jacobian numerically
         jac_forward_diff!(x, r, rx, n, m, J)
@@ -376,43 +388,45 @@ Finally, the search direction is computed by forming : `p = Q1 * [p1 ; P3*p2]`
 * `d` : vector of size `m`, contains the right handside of the system solved to compute `p2`
 """
 function sub_search_direction(
-        J1::Matrix{Float64},
-        rx::Vector{Float64},
-        cx::Vector{Float64},
-        Q1::Matrix,
-        L11::Matrix,
-        P1::Matrix,
-        F_L11::Factorization,
-        F_J2::Factorization,
-        n::Int64,
-        t::Int64,
-        rankA::Int64,
-        dimA::Int64,
-        dimJ2::Int64,
-        code::Int64)
+    J1::Matrix{Float64},
+    rx::Vector{Float64},
+    cx::Vector{Float64},
+    Q1::Matrix,
+    L11::Matrix,
+    P1::Matrix,
+    F_L11::Factorization,
+    F_J2::Factorization,
+    n::Int64,
+    t::Int64,
+    rankA::Int64,
+    dimA::Int64,
+    dimJ2::Int64,
+    code::Int64)
 
-    # Solving without stabilization
+    # Solving without stabilization 
     if code == 1
-        b = - transpose(P1) * cx
+        b = -transpose(P1) * cx
         p1 = LowerTriangular(L11) \ b
         d_temp = -J1 * p1 - rx
-        d =  F_J2.Q' * d_temp
-        δp2 = UpperTriangular(F_J2.R[1:dimJ2,1:dimJ2]) \ d[1:dimJ2]
+        d = F_J2.Q' * d_temp
+        δp2 = UpperTriangular(F_J2.R[1:dimJ2, 1:dimJ2]) \ d[1:dimJ2]
+        # p2 = [δp2; zeros(n - t - dimJ2)][invperm(F_J2.p)]
         p2 = F_J2.P * [δp2; zeros(n - t - dimJ2)]
 
-    # Solving with stabilization
+        # Solving with stabilization
     elseif code == -1
         b_temp = -transpose(P1) * cx
         b = F_L11.Q' * b_temp
-        δp1 = UpperTriangular(F_L11.R[1:dimA,1:dimA]) \ b[1:dimA]
-        p1 = F_L11.P[1:rankA,1:rankA] * [δp1; zeros(rankA - dimA)]
+        δp1 = UpperTriangular(F_L11.R[1:dimA, 1:dimA]) \ b[1:dimA]
+        p1 = F_L11.P[1:rankA, 1:rankA] * [δp1; zeros(rankA - dimA)]
         d_temp = -J1 * p1 - rx
-        d =  F_J2.Q' * d_temp
+        d = F_J2.Q' * d_temp
         δp2 = UpperTriangular(F_J2.R[1:dimJ2, 1:dimJ2]) \ d[1:dimJ2]
+        # p2 = [δp2; zeros(n - rankA - dimJ2)][invperm(F_J2.p)]
         p2 = F_J2.P * [δp2; zeros(n - rankA - dimJ2)]
     end
 
-    p = Q1 * [p1;p2]
+    p = Q1 * [p1; p2]
     return p, b, d
 end
 
@@ -420,7 +434,7 @@ end
 
 
 """
-    gn_search_direction(J,rx,cx,Q1,L11,P1,F_L11,rankA,t,τ,current_iter)
+    gn_search_direction(J,rx,cx,Q1,L11,P1,F_L11,rankA,t,ε_rank,current_iter)
 
 Equivalent Fortran77 routine : GNSRCH
 
@@ -459,7 +473,7 @@ If `rankA = t`, the first system is solved, otherwise, the second one is solved.
 
 * `rankA` : pseudo-rank of matrix `A`
 
-* `τ` : small positive value to compute the pseudo-rank of matrices
+* `ε_rank` : small positive value to compute the pseudo-rank of matrices
 
 # On return
 
@@ -477,15 +491,17 @@ function gn_search_direction(
     F_L11::Factorization,
     rankA::Int64,
     t::Int64,
-    τ::Float64,
+    ε_rank::Float64,
     current_iter::Iteration)
 
     code = (rankA == t ? 1 : -1)
     (m, n) = size(J)
     JQ1 = J * Q1
-    J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
+    J1, J2 = JQ1[:, 1:rankA], JQ1[:, rankA+1:end]
+    
+
     F_J2 = qr(J2, Val(true))
-    rankJ2 = pseudo_rank(diag(F_J2.R), τ)
+    rankJ2 = pseudo_rank(diag(F_J2.R), ε_rank)
     p_gn, b_gn, d_gn = sub_search_direction(J1, rx, cx, Q1, L11, P1, F_L11, F_J2, n, t, rankA, rankA, rankJ2, code)
     current_iter.rankA = rankA
     current_iter.rankJ2 = rankJ2
@@ -532,8 +548,10 @@ function hessian_res!(
         g_kj = (f1 - f2 - f3 + f4) / (4 * ε_j * ε_k)
 
         s = dot(g_kj, rx)
-        B[k,j] = s
-        if j != k B[j,k] = s end
+        B[k, j] = s
+        if j != k
+            B[j, k] = s
+        end
     end
 end
 
@@ -580,8 +598,10 @@ function hessian_cons!(
         # Compute line j of G_k
         g_kj = (act_f1 - act_f2 - act_f3 + act_f4) / (4.0 * ε_k * ε_j)
         s = dot(g_kj, λ)
-        B[k,j] = s
-        if k != j B[j,k] = s end
+        B[k, j] = s
+        if k != j
+            B[j, k] = s
+        end
     end
 end
 
@@ -627,17 +647,19 @@ function newton_search_direction(
     if t == rankA
         b = -P1' * active_cx
         p1 = LowerTriangular(L11) \ b
-     elseif t > rankA
-        b_temp = - transpose(P1) * active_cx
+    elseif t > rankA
+        b_temp = -transpose(P1) * active_cx
         b = F_L11.Q' * b_temp
-        δp1 = UpperTriangular(F_L11.R[1:rankA,1:rankA]) \ b[1:rankA]
-        p1 = F_L11.P[1:rankA,1:rankA] * δp1
+        δp1 = UpperTriangular(F_L11.R[1:rankA, 1:rankA]) \ b[1:rankA]
+        p1 = F_L11.P[1:rankA, 1:rankA] * δp1
     end
-    if rankA == n return p1 end
- 
+    if rankA == n
+        return p1
+    end
+
     # Computation of J1, J2
     JQ1 = J * Q1
-    J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
+    J1, J2 = JQ1[:, 1:rankA], JQ1[:, rankA+1:end]
 
     # Computation of hessian matrices
     r_mat, c_mat = zeros(n, n), zeros(n, n)
@@ -650,30 +672,32 @@ function newton_search_direction(
     if rankA == t
         E = Q1' * Γ_mat * Q1
     elseif t > rankA
-        Q1P2 = Q1*F_L11.P
+        Q1P2 = Q1 * F_L11.P
         E = Q1P2' * Γ_mat * Q1P2
     end
 
     # Forms the system to compute p2
-    E21 = E[rankA + 1:n, 1:rankA]
-    E22 = E[rankA + 1:n, rankA + 1:n]
+    E21 = E[rankA+1:n, 1:rankA]
+    E22 = E[rankA+1:n, rankA+1:n]
 
     W22 = E22 + transpose(J2) * J2
     W21 = E21 + transpose(J2) * J1
 
     d = -W21 * p1 - transpose(J2) * rx
 
-    if isposdef(W22)
-        chol_W22 = cholesky(Symmetric(W22))
+
+    sW22 = (W22 + W22') * (1/2)
+
+    if isposdef(sW22)
+        chol_W22 = cholesky(sW22)
         y = chol_W22.L \ d
         p2 = chol_W22.U \ y
-        p = Q1 * [p1;p2]
+        p = Q1 * [p1; p2]
     else
         p = zeros(n)
         error = true
-        # throw("Erreur dans le calcul de la direction de descente par la méthode de Newton : Matrice non définie positive")
     end
-    return p,error
+    return p, error
 end
 
 """
@@ -712,26 +736,33 @@ Then, computes estimates of lagrage multipliers by forming :
 
 Modifies in place the vector `λ` with the first order estimate of Lagrange multipliers.
 """
-function first_lagrange_mult_estimate!(A::Matrix{Float64}, 
-    λ::Vector{Float64}, 
-    ∇fx::Vector{Float64}, 
+function first_lagrange_mult_estimate!(
+    A::Matrix{Float64},
+    λ::Vector{Float64},
+    ∇fx::Vector{Float64},
     cx::Vector{Float64},
     scaling_done::Bool,
     diag_scale::Vector{Float64},
     F::Factorization{Float64},
-    iter::Iteration)
-
+    iter::Iteration,
+    ε_rank::Float64)
 
     (t, n) = size(A)
     v = zeros(t)
     vnz = zeros(t)
-    prankA = pseudo_rank(diag(F.R))
+    
+    prankA = pseudo_rank(diag(F.R), ε_rank)
+
     b = F.Q' * ∇fx
-    v[1:prankA] = UpperTriangular(F.R[1:prankA,1:prankA]) \ b[1:prankA]
+    
+    v[1:prankA] = UpperTriangular(F.R[1:prankA, 1:prankA]) \ b[1:prankA]
     if prankA < t
-        v[prankA + 1:t] = zeros(t - prankA)
+        v[prankA+1:t] = zeros(t - prankA)
     end
     λ_ls = F.P * v
+
+    # Compute norm of residual
+    iter.grad_res = (n > prankA ? norm(b[prankA+1:n]) : 0.0)
 
     # Compute the nonzero first order lagrange multiplier estimate by forming
     #                  -1
@@ -741,18 +772,17 @@ function first_lagrange_mult_estimate!(A::Matrix{Float64},
     y = zeros(t)
     #                -1
     # Compute y =(L11) * b
-    y[1:prankA] = LowerTriangular(transpose(F.R)[1:prankA,1:prankA]) \ b[1:prankA]
+    y[1:prankA] = LowerTriangular(transpose(F.R)[1:prankA, 1:prankA]) \ b[1:prankA]
     #              -1
     # Compute u = R  * y
     u = zeros(t)
-    u[1:prankA] = UpperTriangular(F.R[1:prankA,1:prankA]) \ y[1:prankA]
+    u[1:prankA] = UpperTriangular(F.R[1:prankA, 1:prankA]) \ y[1:prankA]
     λ[:] = λ_ls + F.P * u
 
     # Back transform due to row scaling of matrix A
-    if scaling_done λ[:] = λ .* diag_scale end
-
-    # Compute norm of residual
-    iter.grad_res = (isempty(b) ? 0.0 : norm(∇fx[t+1:n]))
+    if scaling_done
+        λ[:] = λ .* diag_scale
+    end
     return
 end
 
@@ -768,16 +798,45 @@ function second_lagrange_mult_estimate!(
     λ::Vector{Float64},
     rx::Vector{Float64},
     p_gn::Vector{Float64},
-    t::Int64)
+    t::Int64,
+    scaling::Bool,
+    diag_scale::Vector{Float64})
 
-    J1 = (J * Q1)[:, 1:t]
-    b = transpose(J1) * (rx + J * p_gn)
+    J1 = (J*Q1)[:, 1:t]
+    b = J1' * (rx + J * p_gn)
     v = UpperTriangular(R) \ b
-    λ[:] = P1 * v
-    return
+    λ[:] = P1* v
+    # λ[F.p] = v[:]
 
+    if scaling
+        λ[:] = λ .* diag_scale
+    end
+
+    return
 end
 
+
+function minmax_lagrangian_mult(
+    λ::Vector{Float64},
+    q::Int64, t::Int64,
+    scaling::Bool, diag_scale::Vector{Float64})
+    
+    sq_rel = sqrt(eps(Float64))
+    λ_abs_max = 0.0
+    sigmin = 1e6
+
+    if t > q
+        λ_abs_max = maximum(map(abs,λ))
+        rows = (scaling ? 1.0 ./ diag_scale : diag_scale)
+        for i = q+1:t
+            λ_i = λ[i]
+            if λ_i*rows[i] <= -sq_rel && λ_i < sigmin
+                sigmin = λ_i
+            end
+        end
+    end
+    return sigmin, λ_abs_max
+end
 
 
 # Equivalent Fortran : DELETE in dblreduns.f
@@ -788,12 +847,12 @@ function delete_constraint!(W::WorkingSet, s::Int64)
     l, t = W.l, W.t
 
     # Ajout de la contrainte à l'ensemble inactif
-    W.inactive[l - t + 1] = W.active[s]
-    sort!(@view W.inactive[1:l - t + 1])
+    W.inactive[l-t+1] = W.active[s]
+    sort!(@view W.inactive[1:l-t+1])
 
     # Réorganisation de l'ensemble actif
-    for i = s:t - 1
-        W.active[i] = W.active[i + 1]
+    for i = s:t-1
+        W.active[i] = W.active[i+1]
     end
     W.active[t] = 0
     W.t -= 1
@@ -807,13 +866,13 @@ function add_constraint!(W::WorkingSet, s::Int64)
 
     l, t = W.l, W.t
     # s-th inactive constraint moved from inactive to active set
-    W.active[t + 1] = W.inactive[s]
-    sort!(@view W.active[1:t + 1])
+    W.active[t+1] = W.inactive[s]
+    sort!(@view W.active[1:t+1])
     # Inactive set reorganized
-    for i = s:l - t - 1
-        W.inactive[i] = W.inactive[i + 1]
+    for i = s:l-t-1
+        W.inactive[i] = W.inactive[i+1]
     end
-    W.inactive[l - t] = 0
+    W.inactive[l-t] = 0
     W.t += 1
     return
 end
@@ -832,22 +891,24 @@ function check_constraint_deletion(
     diag_scale::Vector{Float64},
     grad_res::Float64)
 
-    (t,n) = size(A)
+      
+    (t, n) = size(A)
     δ = 10.0
     τ = 0.5
-    sq_rel = sqrt(eps(Float64))
+    λ_max = (isempty(λ) ? 1.0 : maximum(map(t -> abs(t), λ)))
+    sq_rel = sqrt(eps(Float64)) * λ_max
     s = 0
+    
     if t > q
         e = sq_rel
-        for i = q + 1:t
+        for i = q+1:t
             row_i = (scaling ? 1.0 / diag_scale[i] : diag_scale[i])
             if row_i * λ[i] <= sq_rel && row_i * λ[i] <= e
                 e = row_i * λ[i]
                 s = i
             end
         end
-        
-        if grad_res > -e * δ
+        if grad_res > -e * δ # grad_res - sq_rel > -e * δ
             s = 0
         end
     end
@@ -858,9 +919,9 @@ end
 # Move violated constraints to the working set
 
 function evaluate_violated_constraints(
-        cx::Vector{Float64},
-        W::WorkingSet,
-        index_α_upp::Int64)
+    cx::Vector{Float64},
+    W::WorkingSet,
+    index_α_upp::Int64)
 
     # Data
     ε = sqrt(eps(Float64))
@@ -871,41 +932,52 @@ function evaluate_violated_constraints(
         while i <= W.l - W.t
             k = W.inactive[i]
             if cx[k] < ε || (k == index_α_upp && cx[k] < δ)
-                println("Added constraint : $k")
                 add_constraint!(W, i)
                 added = true
+                if added
+                end
             else
                 i += 1
             end
         end
     end
-    println("[evaluate_violated_constraints] added = ",added)
     return added
 end
 
 # Updates QR factorisation of A^T by appyling Givens rotations
+
+function update_QR_A(A::Matrix{Float64})
+    (t,n) = size(A)
+    F_A = qr(A', Val(true)) 
+    Q1 = F_A.Q*Matrix(I,n,n)
+    L11, P1 = Matrix(F_A.R'), F_A.P
+    return P1, L11, Q1
+end
 # Returns 
 function update_QR_A(
     Q::Matrix{Float64},
     R::Matrix{Float64},
     p::Vector{Int64},
-    j::Int64,
+    s::Int64,
     t::Int64)
 
     # Update permutation vector, form permutation matrix, delete j-th column of matrix R 
-    setdiff!(p,j)
-    p[:] = [(e > j ? e-1 : e) for e in p]
-    P = (1.0*Matrix(I,t,t))[:,p]
-    R_temp = R[:,setdiff(1:end,j)]
+    j = p[s]
+    setdiff!(p, j)
+    p[:] = [(e > j ? e - 1 : e) for e in p] 
+    P = (1.0*Matrix(I, t, t))[:, p]
+
+    R_temp = R[:, setdiff(1:end, j)]
 
     # Apply Givens rotations to transform R to Upper triangular form
 
     for i = j:t
-        G, r = givens(R_temp[i,i],R_temp[i+1,i],i,i+1)
-        lmul!(G,R_temp)
-        rmul!(Q,G')
+        G, r = givens(-R_temp[i, i], -R_temp[i+1, i], i, i + 1)
+        lmul!(G, R_temp)
+        rmul!(Q, G')
     end
-    return P, Matrix(transpose(R_temp[1:t,1:t])), Q
+
+    return P, Matrix(transpose(R_temp[1:t, 1:t])), Q, p
 end
 
 
@@ -950,21 +1022,22 @@ function update_working_set(
     ∇fx::Vector{Float64},
     J::Matrix{Float64},
     p_gn::Vector{Float64},
-    iter_k::Iteration)
+    iter_k::Iteration,
+    ε_rank::Float64)
 
 
     λ = Vector{Float64}(undef, W.t)
-    ε_rank = sqrt(eps(Float64))
-    F_A = qr(C.A',Val(true))
-    first_lagrange_mult_estimate!(C.A, λ, ∇fx, C.cx, C.scaling, C.diag_scale,F_A,iter_k)
-    s = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,iter_k.grad_res)
-    (m,n) = size(J)
+    
+    F_A = qr(C.A', Val(true))
+    
+    first_lagrange_mult_estimate!(C.A, λ, ∇fx, C.cx, C.scaling, C.diag_scale, F_A, iter_k, ε_rank)
+    s = check_constraint_deletion(W.q, C.A, λ, ∇fx, C.scaling, C.diag_scale, iter_k.grad_res)
+    (m, n) = size(J)
     # Constraint number s is deleted from the current working set
     if s != 0
-        println("[update_working_set] Constraint deleted : $(W.active[s])")
         # Save s-th element of cx,λ and row s of A to test for feasible direction
         cx_s = C.cx[s]
-        A_s = C.A[s,:]
+        A_s = C.A[s, :]
         λ_s = λ[s]
         diag_scale_s = C.diag_scale[s]
         index_s = W.active[s]
@@ -974,10 +1047,13 @@ function update_working_set(
         delete_constraint!(W, s)
         iter_k.del = true
         iter_k.index_del = index_s
-        C.A = C.A[setdiff(1:end, s),:]
-        Q1 = F_A.Q*Matrix(I,n,n)
+        C.A = C.A[setdiff(1:end, s), :]
+        Q1 = F_A.Q * Matrix(I, n, n)
         vect_P1 = F_A.p[:]
-        P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s,W.t)
+        
+        # P1, L11, Q1 = update_QR_A(Q1, F_A.R, vect_P1, s, W.t)
+        P1, L11, Q1 = update_QR_A(C.A)
+        
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
@@ -987,7 +1063,6 @@ function update_working_set(
         feasible = (As_p >= -cx_s && As_p > 0)
 
         if !feasible
-            println("[update_working_set] p no feasible")
             insert!(C.cx, s, cx_s)
             insert!(λ, s, λ_s)
             insert!(C.diag_scale, s, diag_scale_s)
@@ -995,17 +1070,17 @@ function update_working_set(
             add_constraint!(W, s_inact)
             iter_k.index_del = 0
             iter_k.del = false
-            C.A = (C.scaling ? A[W.active[1:W.t],:] .* C.diag_scale : A[W.active[1:W.t],:])
-            Q1 = F_A.Q * Matrix(I,n,n)
+            C.A = (C.scaling ? A[W.active[1:W.t], :] .* C.diag_scale : A[W.active[1:W.t], :])
+            Q1 = F_A.Q * Matrix(I, n, n)
             L11, P1 = Matrix(transpose(F_A.R)), F_A.P
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
             p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
+
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
-                second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t)
-                s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,0.0)
+                second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
+                s2 = check_constraint_deletion(W.q, C.A, λ, ∇fx, C.scaling, C.diag_scale, 0.0)
                 if s2 != 0
-                    println("[update_working_set] Second order, Constraint deleted : $(W.active[s2])")
                     index_s2 = W.active[s2]
                     deleteat!(λ, s2)
                     deleteat!(C.diag_scale, s2)
@@ -1013,29 +1088,29 @@ function update_working_set(
                     delete_constraint!(W, s2)
                     iter_k.del = true
                     iter_k.index_del = index_s2
-                    C.A = C.A[setdiff(1:end, s2),:]
-                    Q1 = F_A.Q*Matrix(I,n,n)
+                    C.A = C.A[setdiff(1:end, s2), :]
+                    Q1 = F_A.Q * Matrix(I, n, n)
                     vect_P1 = F_A.p[:]
-                    P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
+                    P1, L11, Q1 = update_QR_A(C.A)
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
-                    p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11,rankA, W.t, ε_rank, iter_k)
+                    p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
                 end
             end
         end
-    # No first order estimate implies deletion of a constraint
+        # No first order estimate implies deletion of a constraint
     elseif s == 0
-        println("[update_working_set] no first order deletion")
-        Q1 = F_A.Q * Matrix(I,n,n)
+        Q1 = F_A.Q * Matrix(I, n, n)
         L11, P1 = Matrix(F_A.R'), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
+
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
+
         if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
-            second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t)
-            s2 = check_constraint_deletion(W.q,C.A,λ,∇fx,C.scaling,C.diag_scale,0.0)
+            second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
+            s2 = check_constraint_deletion(W.q, C.A, λ, ∇fx, C.scaling, C.diag_scale, 0.0)
             if s2 != 0
-                println("[update_working_set] Second order, Constraint deleted : $(W.active[s2])")
                 index_s2 = W.active[s2]
                 deleteat!(λ, s2)
                 deleteat!(C.diag_scale, s2)
@@ -1043,10 +1118,12 @@ function update_working_set(
                 delete_constraint!(W, s2)
                 iter_k.del = true
                 iter_k.index_del = index_s2
-                C.A = C.A[setdiff(1:end, s2),:]
-                Q1 = F_A.Q*Matrix(I,n,n)
+                Q1 = F_A.Q * Matrix(I, n, n)
                 vect_P1 = F_A.p[:]
-                P1, L11, Q1 = update_QR_A(Q1,F_A.R,vect_P1,s2,W.t)
+                C.A = C.A[setdiff(1:end, s2), :]
+
+                P1, L11, Q1 = update_QR_A(C.A)
+
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
                 p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
@@ -1082,7 +1159,13 @@ Then, initialize the penalty constants.
 
 * `first_working_set` : [`WorkingSet`](@ref) object, contains infos about the first working set
 """
-function init_working_set(cx::Vector{Float64}, K::Array{Array{Float64,1},1}, step::Iteration, q::Int64, l::Int64)
+
+
+
+
+function init_working_set(cx::Vector{Float64}, K::Array{Array{Float64,1},1}, 
+    step::Iteration, q::Int64, l::Int64)
+
     δ, ϵ, ε_rel = 0.1, 0.01, sqrt(eps(Float64))
 
     # Initialisation des pénalités
@@ -1093,17 +1176,21 @@ function init_working_set(cx::Vector{Float64}, K::Array{Array{Float64,1},1}, ste
     end
 
     # Determination du premier ensemble actif
-    active = zeros(Int64, l); inactive = zeros(Int64, l - q)
-    t = q; lmt = 0
+    active = zeros(Int64, l)
+    inactive = zeros(Int64, l - q)
+    t = q
+    lmt = 0
 
     # Les contraintes d'égalité sont toujours actives
     active[1:q] = [i for i = 1:q]
-            
-    for i = q + 1:l
-        if cx[i] <= ε_rel
-            t += 1; active[t] = i
+
+    for i = q+1:l
+        if cx[i] <= 0.0 
+            t += 1
+            active[t] = i
         else
-            lmt += 1; inactive[lmt] = i
+            lmt += 1
+            inactive[lmt] = i
         end
     end
     step.t = t
@@ -1132,7 +1219,7 @@ function subspace_min_previous_step(
     if ((previous_α < stepb) &&
         (progress <= pgb1 * predicted_linear_progress^2) &&
         (progress <= pgb2 * prelin_previous_dim^2))
-        
+
         # Bad step
         dim = max(1, previous_dimR - 1)
         if ((previous_dimR > 1) && (ρ[dim] > c1 * ρ_prk))
@@ -1141,13 +1228,17 @@ function subspace_min_previous_step(
     end
 
     dim = previous_dimR
-    if (((ρ[dim] > predb * ρ_prk) && (rlenb * τ[dim] < τ[dim + 1])) ||
-        (c2 * τ[dim] < τ[dim + 1]))
+    if (((ρ[dim] > predb * ρ_prk) && (rlenb * τ[dim] < τ[dim+1])) ||
+        (c2 * τ[dim] < τ[dim+1]))
         suggested_dim = dim
     else
         i1 = previous_dimR - 1
-        buff = [i for i = i1:previous_dimR if ρ[i] > predb * ρ_prk]
-        suggested_dim = (isempty(buff) ? pseudo_rk : min(buff))
+        if i1 <= 0
+            suggested_dim = pseudo_rk
+        else
+            buff = [i for i = i1:previous_dimR if ρ[i] > predb * ρ_prk]
+            suggested_dim = (isempty(buff) ? pseudo_rk : minimum(buff))
+        end
     end
     return suggested_dim
 end
@@ -1219,7 +1310,7 @@ function check_gn_direction(
 
     # To accept the Gauss-Newton we must not have used the method of
     # Newton before and current step must not be a restart step 
-    
+
     newton_or_restart = iter_km1.code == 2 || restart
 
     # If any of the following conditions is satisfied the Gauss-Newton direction is accepted
@@ -1228,34 +1319,36 @@ function check_gn_direction(
     # 3) the real progress > c2 * predicted linear progress (provided we are not close to the solution)
 
     first_iter = (iter_number == 0)
+    submin_prev_iter = iter_km1.code == -1
     add_or_del = (constraint_added || constraint_deleted)
     convergence_lower_c1 = (β_k < c1 * iter_km1.β)
     progress_not_close = ((iter_km1.progress > c2 * iter_km1.predicted_reduction) && ((dnrm <= c3 * β_k)))
-    if newton_or_restart || !(first_iter || add_or_del || convergence_lower_c1 || progress_not_close)
+    if newton_or_restart || (!first_iter && (submin_prev_iter || !(add_or_del || convergence_lower_c1 || progress_not_close)))
 
         # Subspace minimization is suggested if one of the following holds true
         # 4) There is something left to reduce in subspaces 
         # 5) Addition and/or deletion to/from current working set in the latest step
-        # 6) The nonlinearity is too sever
+        # 6) The nonlinearity is too severe
 
         method_code = -1
         non_linearity_k = sqrt(d1nrm * d1nrm + active_c_sum)
         non_linearity_km1 = sqrt(d1nrm_as_km1 * d1nrm_as_km1 + active_c_sum)
-    
+
         to_reduce = false
         if W.q < W.t
             sqr_ε = sqrt(eps(Float64))
-            rows = zeros(W.t-W.q)
+            rows = zeros(W.t - W.q)
             for i = W.q+1:W.t
-                rows[i] = (scaling ? 1.0 / diag_scale[i] : diag_scale[i])
+                rows[i-W.q] = (scaling ? 1.0 / diag_scale[i] : diag_scale[i])
             end
-            lagrange_mult_cond = any(>=(-sqr_ε), λ[W.q + 1:W.t] .* rows) && any(<(0), λ[W.q + 1:W.t])
+            lagrange_mult_cond = any(>=(-sqr_ε), λ[W.q+1:W.t] .* rows) && any(<(0), λ[W.q+1:W.t])
             to_reduce = (to_reduce || lagrange_mult_cond)
         end
         if (W.l - W.t > 0)
-            inact_c = [cx[W.inactive[j]] for j = 1:((W.l - W.t))]
+            inact_c = [cx[W.inactive[j]] for j = 1:((W.l-W.t))]
             to_reduce = (to_reduce || any(<(δ), inact_c))
         end
+
         newton_previously = iter_km1.code == 2 && !constraint_deleted
         cond4 = active_c_sum > c2
 
@@ -1263,7 +1356,6 @@ function check_gn_direction(
 
         ϵ = max(1e-2, 10.0 * ε_rel)
         cond6 = !((W.l == W.q) || (rankA <= W.t)) && !((β_k < ϵ * dnrm) || (b1nrm < ϵ && m == n - W.t))
-
         if newton_previously || !(cond4 || cond5 || cond6)
             cond7 = (iter_km1.α < c5 && non_linearity_km1 < c2 * non_linearity_k) || m == n - W.t
             cond8 = !(dnrm <= c4 * β_k)
@@ -1306,14 +1398,14 @@ function determine_solving_dim(
     if rankR > 0
         l_estim_sd, l_estim_righthand = zeros(rankR), zeros(rankR)
         l_estim_sd[1] = abs(y[1])
-        l_estim_righthand[1] = abs(y[1] / R[1,1])
+        l_estim_righthand[1] = abs(y[1] / R[1, 1])
 
         if rankR > 1
             for i = 2:rankR
                 l_estim_sd[i] = y[i]
-                l_estim_righthand[i] = y[i] / R[i,i]
-                l_estim_righthand[i] = norm(l_estim_righthand[i - 1:i])
-                l_estim_sd[i] = norm(l_estim_sd[i - 1:i])
+                l_estim_righthand[i] = y[i] / R[i, i]
+                l_estim_righthand[i] = norm(l_estim_righthand[i-1:i])
+                l_estim_sd[i] = norm(l_estim_sd[i-1:i])
             end
         end
 
@@ -1326,7 +1418,7 @@ function determine_solving_dim(
         psimax = 0.0
         for i = 1:rankR
             dsum += l_estim_sd[i]^2
-            psi = sqrt(dsum) * abs(R[i,i])
+            psi = sqrt(dsum) * abs(R[i, i])
             if psi > psimax
                 psimax = psi
                 mindim = i
@@ -1341,9 +1433,9 @@ function determine_solving_dim(
 
             elseif previous_dimR != rankR && rankR > 0
                 # Subbspace-Minimization at previous step
-                suggested_dim = subspace_min_previous_step(l_estim_sd,l_estim_righthand,nrm_estim_righthand,
-                    c1,rankR,previous_dimR,obj_progress,predicted_linear_progress,
-                    prelin_previous_dim,previous_α)
+                suggested_dim = subspace_min_previous_step(l_estim_sd, l_estim_righthand, nrm_estim_righthand,
+                    c1, rankR, previous_dimR, obj_progress, predicted_linear_progress,
+                    prelin_previous_dim, previous_α)
             end
             newdim = max(mindim, suggested_dim)
         end
@@ -1364,18 +1456,18 @@ end
 # Computes the dimensions of the subspaces where minimization should be done
 
 function choose_subspace_dimensions(
-        rx_sum::Float64,
-        rx::Vector{Float64},
-        active_cx_sum::Float64,
-        J1::Matrix{Float64},
-        t::Int64,
-        rankJ2::Int64,
-        rankA::Int64,
-        b::Vector{Float64},
-        F_L11::Factorization,
-        F_J2::Factorization,
-        previous_iter::Iteration,
-        restart::Bool)
+    rx_sum::Float64,
+    rx::Vector{Float64},
+    active_cx_sum::Float64,
+    J1::Matrix{Float64},
+    t::Int64,
+    rankJ2::Int64,
+    rankA::Int64,
+    b::Vector{Float64},
+    F_L11::Factorization,
+    F_J2::Factorization,
+    previous_iter::Iteration,
+    restart::Bool)
 
     # Data
     c1, c2, α_low = 0.1, 0.01, 0.2
@@ -1400,12 +1492,14 @@ function choose_subspace_dimensions(
         # Using dimA columns of R11
         # Forms right hand side d = r(x)+J1*p1
 
-        δp1 = UpperTriangular(F_L11.R[1:dimA,1:dimA]) \ b[1:dimA]
-        p1 = F_L11.P[1:rankA,1:rankA] * [δp1;zeros(rankA - dimA)]
+        δp1 = UpperTriangular(F_L11.R[1:dimA, 1:dimA]) \ b[1:dimA]
+        p1 = F_L11.P[1:rankA, 1:rankA] * [δp1; zeros(rankA - dimA)]
         d = -(rx + J1 * p1)
     end
 
-    if rankJ2 > 0 d = F_J2.Q' * d end
+    if rankJ2 > 0
+        d = F_J2.Q' * d
+    end
 
     previous_dimJ2 = abs(previous_iter.dimJ2) + previous_iter.t - t
     nrm_d_asprev = norm(d[1:previous_dimJ2])
@@ -1433,71 +1527,76 @@ Check if the latest step was sufficientlt good and eventually recompute the sear
 * `error_code` : integer indicating if there was an error if computations. In current version, errors can come from the method of Newton
 """
 function search_direction_analys(
-        previous_iter::Iteration,
-        current_iter::Iteration,
-        iter_number::Int64,
-        x::Vector{Float64},
-        c::ConstraintsEval,
-        r::ResidualsEval,
-        rx::Vector{Float64},
-        cx::Vector{Float64},
-        active_cx::Vector{Float64},
-        λ::Vector{Float64},
-        rx_sum::Float64,
-        active_cx_sum::Float64,
-        p_gn::Vector{Float64},
-        d_gn::Vector{Float64},
-        b_gn::Vector{Float64},
-        nrm_b1_gn::Float64,
-        nrm_d1_gn::Float64,
-        nrm_d_gn::Float64,
-        J::Matrix{Float64},
-        m::Int64,
-        n::Int64,
-        working_set::WorkingSet,
-        rankA::Int64,
-        rankJ2::Int64,
-        P1::Matrix{Float64},
-        Q1::Matrix{Float64},
-        L11::Matrix{Float64},
-        F_L11::Factorization,
-        F_J2::Factorization,
-        constraint_added::Bool,
-        constraint_deleted::Bool,
-        scaling::Bool,
-        diag_scale::Vector{Float64},
-        restart::Bool=false)
+    previous_iter::Iteration,
+    current_iter::Iteration,
+    iter_number::Int64,
+    x::Vector{Float64},
+    c::ConstraintsEval,
+    r::ResidualsEval,
+    rx::Vector{Float64},
+    cx::Vector{Float64},
+    active_cx::Vector{Float64},
+    λ::Vector{Float64},
+    rx_sum::Float64,
+    active_cx_sum::Float64,
+    p_gn::Vector{Float64},
+    d_gn::Vector{Float64},
+    b_gn::Vector{Float64},
+    nrm_b1_gn::Float64,
+    nrm_d1_gn::Float64,
+    nrm_d_gn::Float64,
+    J::Matrix{Float64},
+    m::Int64,
+    n::Int64,
+    working_set::WorkingSet,
+    rankA::Int64,
+    rankJ2::Int64,
+    P1::Matrix{Float64},
+    Q1::Matrix{Float64},
+    L11::Matrix{Float64},
+    F_L11::Factorization,
+    F_J2::Factorization,
+    constraint_added::Bool,
+    constraint_deleted::Bool,
+    scaling::Bool,
+    diag_scale::Vector{Float64},
+    restart::Bool=false)
 
 
     prev_dimJ2m1 = previous_iter.dimJ2 + previous_iter.t - working_set.t - 1
     nrm_d1_asprev = norm(d_gn[1:prev_dimJ2m1])
     error_code = 0
-    method_code, β = check_gn_direction(nrm_b1_gn,nrm_d1_gn,nrm_d1_asprev,nrm_d_gn,active_cx_sum,iter_number,rankA,n,m,restart,constraint_added,constraint_deleted,working_set,cx,λ,previous_iter,scaling,diag_scale)
-
+    method_code, β = check_gn_direction(nrm_b1_gn, nrm_d1_gn, nrm_d1_asprev, nrm_d_gn, active_cx_sum, iter_number, rankA, n, m, restart, constraint_added, constraint_deleted, working_set, cx, λ,
+        previous_iter, scaling, diag_scale)
     # Gauss-Newton accepted
     if method_code == 1
         dimA = rankA
         dimJ2 = rankJ2
         p, b, d = p_gn, b_gn, d_gn
 
-    # Subspace minimization to recompute the search direction
-    # using dimA columns of matrix R11 and dimJ2 columns of matrix R22
+        # Subspace minimization to recompute the search direction
+        # using dimA columns of matrix R11 and dimJ2 columns of matrix R22
     elseif method_code == -1
         JQ1 = J * Q1
-        J1, J2 = JQ1[:,1:rankA], JQ1[:,rankA + 1:end]
+        J1, J2 = JQ1[:, 1:rankA], JQ1[:, rankA+1:end]
         b_temp = -transpose(P1) * active_cx
         b = F_L11.Q' * b_temp
-        dimA, dimJ2 = choose_subspace_dimensions(rx_sum,rx,active_cx_sum,J1,working_set.t,rankJ2,rankA,b,F_L11,F_J2,previous_iter,restart)
+        dimA, dimJ2 = choose_subspace_dimensions(rx_sum, rx, active_cx_sum, J1, working_set.t, rankJ2, rankA, b, F_L11, F_J2, previous_iter, restart)
         p, b, d = sub_search_direction(J1, rx, active_cx, Q1, L11, P1, F_L11, F_J2, n, working_set.t, rankA, dimA, dimJ2, method_code)
+        if dimA == rankA && dimJ2 == rankJ2
+            method_code = 1
+        end
 
-    # Search direction computed with the method of Newton
+        # Search direction computed with the method of Newton
     elseif method_code == 2
         p, newton_error = newton_search_direction(x, c, r, active_cx, working_set.active, n, m, working_set.l, working_set.t, λ, rx, J, Q1, P1, L11, F_L11, rankA)
         b, d = b_gn, d_gn
         dimA = -working_set.t
         dimJ2 = working_set.t - n
         current_iter.nb_newton_steps += 1
-        if newton_error error_code = -3 end
+        if newton_error
+            error_code = -3
+        end
     end
 
     current_iter.b_gn = b
@@ -1549,10 +1648,10 @@ function psi(
     end
 
     # Second part of sum with inactive constraints
-    for i = 1:l - t
+    for i = 1:l-t
         j = inactive[i]
         if c_new[j] < 0.0
-            penalty_constraint_sum  += w[j] * c_new[j]^2
+            penalty_constraint_sum += w[j] * c_new[j]^2
         end
     end
     return 0.5 * (dot(r_new, r_new) + penalty_constraint_sum)
@@ -1568,9 +1667,9 @@ function assort!(
 
     for i in 1:t, ii in 1:4
         k = active[i]
-            if w[k] > K[ii][k]
-            for j = 4:-1:ii + 1
-                K[j][k] = K[j - 1][k]
+        if w[k] > K[ii][k]
+            for j = 4:-1:ii+1
+                K[j][k] = K[j-1][k]
             end
             K[ii][k] = w[k]
         end
@@ -1600,12 +1699,13 @@ function min_norm_w!(
     nb_pos::Int64)
 
     w[:] = w_old
-    println("[min_norm_w] τ = $τ, pos_index = $pos_index, nb_pos = $nb_pos")
     if nb_pos > 0
         y_sum = dot(y, y)
         y_norm = norm(y)
         # Scale the vector y
-        if y_norm != 0.0 y /= y_norm end
+        if y_norm != 0.0
+            y /= y_norm
+        end
         τ_new = τ
         s = 0.0
         n_runch = nb_pos
@@ -1627,15 +1727,14 @@ function min_norm_w!(
                     s += w_old[i] * y[k] * y_norm
                     n_runch -= 1
                     for j = k:n_runch
-                        pos_index[j] = pos_index[j + 1]
-                        y[j] = y[j + 1]
+                        pos_index[j] = pos_index[j+1]
+                        y[j] = y[j+1]
                     end
                 end
             end
             y_sum *= y_norm * y_norm
-            terminated = (n_runch <= 0 ) || (ctrl == 2) || (i_stop == n_runch)
+            terminated = (n_runch <= 0) || (ctrl == 2) || (i_stop == n_runch)
         end
-
     end
     return
 end
@@ -1644,7 +1743,7 @@ end
 # EUCNRM
 # Update the penalty constants using the euclidean norm
 
-function euclidean_norm_weight_update!(
+function euclidean_norm_weight_update(
     vA::Vector{Float64},
     cx::Vector{Float64},
     active::Vector{Int64},
@@ -1652,21 +1751,19 @@ function euclidean_norm_weight_update!(
     μ::Float64,
     dimA::Int64,
     previous_w::Vector{Float64},
-    w::Vector{Float64},
     K::Array{Array{Float64,1},1})
 
-    if t == 0
-        # if no active constraints, previous penalty weights are used
-        w[:] = previous_w
-    else
+    # if no active constraints, previous penalty weights are used
+    w = previous_w[:]
+    if t != 0
+
         # Compute z = [<∇c_i(x),p>^2]_i for i ∈ active
-        z = vA.^2
+        z = vA .^ 2
         # Compute ztw = z(TR)w_old where w_old holds the 4th lowest weights used so far
         # for constraints in active set
         w_old = K[4]
         ztw = dot(z, w_old[active[1:t]])
         pos_index = zeros(Int64, t)
-
         if (ztw >= μ) && (dimA < t)
 
             # if ztw ≧ μ, no need to change w_old unless t = dimA
@@ -1713,7 +1810,7 @@ function euclidean_norm_weight_update!(
         end
         assort!(K, w, t, active)
     end
-    return
+    return w
 end
 
 
@@ -1722,18 +1819,18 @@ end
 # constraints in the current working setb
 
 function max_norm_weight_update!(
-        nrm2_Ap::Float64,
-        rmy::Float64,
-        α_w::Float64,
-        δ::Float64,
-        w::Vector{Float64},
-        active::Vector{Int64},
-        t::Int64,
-        K::Array{Array{Float64,1},1})
-    μ = (abs(α_w - 1.0) <= δ ? 0.0 : rmy / nrm2_Ap)
+    nrm_Ap::Float64,
+    rmy::Float64,
+    α_w::Float64,
+    δ::Float64,
+    w::Vector{Float64},
+    active::Vector{Int64},
+    t::Int64,
+    K::Array{Array{Float64,1},1})
+    μ = (abs(α_w - 1.0) <= δ ? 0.0 : rmy / nrm_Ap)
     i1 = (active[1] != 0 ? active[1] : 1)
 
-        previous_w = w[i1]
+    previous_w = w[i1]
     ν = max(μ, K[4][1])
     for i = 1:t
         k = active[i]
@@ -1745,8 +1842,8 @@ function max_norm_weight_update!(
         i = 1
         while i <= 4 && mu_not_placed
             if μ > K[i][1]
-                for j = 4:-1:i + 1
-                    K[j][1] = K[j - 1][1]
+                for j = 4:-1:i+1
+                    K[j][1] = K[j-1][1]
                 end
                 K[i][1] = μ
                 mu_not_placed = false
@@ -1762,58 +1859,89 @@ end
 # where ψ(α) is approximalety minimized
 
 function penalty_weight_update(
-        w_old::Vector{Float64},
-        Jp::Vector{Float64},
-        Ap::Vector{Float64},
-        K::Array{Array{Float64,1},1},
-        rx::Vector{Float64},
-        cx::Vector{Float64},
-        active::Vector{Int64},
-        t::Int64,
-        dimA::Int64,
-        norm_code::Int64)
+    w_old::Vector{Float64},
+    Jp::Vector{Float64},
+    Ap::Vector{Float64},
+    K::Array{Array{Float64,1},1},
+    rx::Vector{Float64},
+    cx::Vector{Float64},
+    active::Vector{Int64},
+    t::Int64,
+    dimA::Int64,
+    norm_code::Int64)
     # Data
     δ = 0.25
-    w = w_old[:]
 
-    nrm2_Ap = dot(Ap, Ap)
-    nrm2_Jp = dot(Jp, Jp)
-    Jp_rx = dot(Jp, rx)
-            
-    AtwA = 0.
-    BtwA = 0.
+
+
+    nrm_Ap = sqrt(dot(Ap, Ap))
+    nrm_cx = (isempty(cx[active[1:dimA]]) ? 0.0 : max(0,maximum(map(abs,cx[active[1:dimA]]))))
+    nrm_Jp = sqrt(dot(Jp, Jp))
+    nrm_rx = sqrt(dot(rx,rx))
+
+    # Scaling of vectors Jp, Ap, rx and cx
+    if nrm_Jp != 0
+        Jp = Jp / nrm_Jp
+    end
+
+    if nrm_Ap != 0
+        Ap = Ap / nrm_Ap
+    end
+
+    if nrm_rx != 0
+        rx = rx / nrm_rx
+    end
+
+    if nrm_cx != 0
+        cx = cx / nrm_cx
+    end
+    
+
+    Jp_rx = dot(Jp, rx) * nrm_Jp * nrm_rx
+    
+
+    AtwA = 0.0
+    BtwA = 0.0
     if dimA > 0
         for i = 1:dimA
             k = active[i]
-            AtwA += w[k] * Ap[i]^2
-            BtwA += w[k] * Ap[i] * cx[k]
+            AtwA += w_old[k] * Ap[i]^2
+            BtwA += w_old[k] * Ap[i] * cx[k]
         end
     end
+    AtwA *= nrm_Ap^2
+    BtwA *= nrm_Ap * nrm_cx
 
     α_w = 1.0
-    if abs(AtwA + nrm2_Jp) > eps(Float64)
-        α_w = (-BtwA - Jp_rx) / (AtwA + nrm2_Jp)
+    if abs(AtwA + nrm_Jp^2) > eps(Float64)
+        α_w = (-BtwA - Jp_rx) / (AtwA + nrm_Jp^2)
     end
 
-    rmy = (abs(Jp_rx + nrm2_Jp) / δ) - nrm2_Jp
+    rmy = (abs(Jp_rx + nrm_Jp^2) / δ) - nrm_Jp^2
+
     if norm_code == 0
-        max_norm_weight_update!(nrm2_Ap, rmy, α_w, δ, w, active, t, K)
+        w = w_old[:]
+        max_norm_weight_update!(nrm_Ap, rmy, α_w, δ, w, active, t, K)
     elseif norm_code == 2
-        euclidean_norm_weight_update!(Ap, cx, active, t, rmy, dimA, w_old, w, K)
+
+        w = euclidean_norm_weight_update(Ap*nrm_Ap, cx*nrm_cx, active, t, rmy, dimA, w_old, K)
     end
     #                               T                       T
     # Computation of ψ'(0) = [J(x)p] r(x)+   Σ      w_i*[∇c_i(x) p]c_i(x)
     #                                     i ∈ active
     BtwA = 0.0
+    AtwA = 0.0
     wsum = 0.0
     for i = 1:t
         k = active[i]
+        AtwA += w[k] * Ap[i]^2
         BtwA += w[k] * Ap[i] * cx[k]
         wsum += w[k]
     end
-    println( "[penalty_weight_update] wsum = ",wsum)
+    BtwA *= nrm_Ap * nrm_cx
+    AtwA *= nrm_Ap^2
+
     dψ0 = BtwA + Jp_rx
-    println("[penalty_weight_update] BtwA = $BtwA, Jp_rx = $Jp_rx, dψ0 = $dψ0")
     return w, dψ0
 end
 
@@ -1822,26 +1950,26 @@ end
 # Compute in place the components of vector v used for polynomial minimization
 
 function concatenate!(v::Vector{Float64},
-                      rx::Vector{Float64},
-                      cx::Vector{Float64},
-                      w::Vector{Float64},
-                      m::Int64,
-                      t::Int64,
-                      l::Int64,
-                      active::Vector{Int64},
-                      inactive::Vector{Int64})
+    rx::Vector{Float64},
+    cx::Vector{Float64},
+    w::Vector{Float64},
+    m::Int64,
+    t::Int64,
+    l::Int64,
+    active::Vector{Int64},
+    inactive::Vector{Int64})
 
     v[1:m] = rx[:]
     if t != 0
         for i = 1:t
             k = active[i]
-            v[m + k] = sqrt(w[k]) * cx[k]
+            v[m+k] = sqrt(w[k]) * cx[k]
         end
-end
+    end
     if l != 0
-        for j = 1:l - t
+        for j = 1:l-t
             k = inactive[j]
-            v[m + k] = (cx[k] > 0 ? 0.0 : sqrt(w[k]) * cx[k])
+            v[m+k] = (cx[k] > 0 ? 0.0 : sqrt(w[k]) * cx[k])
         end
     end
     return
@@ -1852,19 +1980,19 @@ end
 # Also modifies components of v1 related to constraints
 
 function coefficients_linesearch!(v0::Vector{Float64},
-                                 v1::Vector{Float64},
-                                 v2::Vector{Float64},
-                                 α_k::Float64,
-                                 rx::Vector{Float64},
-                                 cx::Vector{Float64},
-                                 rx_new::Vector{Float64},
-                                 cx_new::Vector{Float64},
-                                 w::Vector{Float64},
-                                 m::Int64,
-                                 t::Int64,
-                                 l::Int64,
-                                 active::Vector{Int64},
-                                 inactive::Vector{Int64})
+    v1::Vector{Float64},
+    v2::Vector{Float64},
+    α_k::Float64,
+    rx::Vector{Float64},
+    cx::Vector{Float64},
+    rx_new::Vector{Float64},
+    cx_new::Vector{Float64},
+    w::Vector{Float64},
+    m::Int64,
+    t::Int64,
+    l::Int64,
+    active::Vector{Int64},
+    inactive::Vector{Int64})
 
     # Compute v0
     concatenate!(v0, rx, cx, w, m, t, l, active, inactive)
@@ -1881,8 +2009,8 @@ end
 # Equivalent Fortran : QUAMIN in dblreduns.f
 
 function minimize_quadratic(x1::Float64, y1::Float64,
-                            x2::Float64, y2::Float64,
-                            x3::Float64, y3::Float64)
+    x2::Float64, y2::Float64,
+    x3::Float64, y3::Float64)
 
     d1, d2 = y2 - y1, y3 - y1
     s = (x3 - x1)^2 * d1 - (x2 - x1)^2 * d2
@@ -1895,22 +2023,22 @@ end
 
 
 function minrn(x1::Float64, y1::Float64,
-               x2::Float64, y2::Float64,
-               x3::Float64, y3::Float64,
-               α_min::Float64,
-               α_max::Float64,
-               p_max::Float64)
+    x2::Float64, y2::Float64,
+    x3::Float64, y3::Float64,
+    α_min::Float64,
+    α_max::Float64,
+    p_max::Float64)
 
     ε = sqrt(eps(Float64)) / p_max
 
     # α not computable
     # Add an error in this case
     if abs(x1 - x2) < ε || abs(x3 - x1) < ε || abs(x3 - x2) < ε
-        α, pα = 0., 0.
+        α, pα = 0.0, 0.0
 
     else
-    # Compute minimum of quadradic passing through y1, y2 and y3
-    # respectively at points x1, x2 and x3
+        # Compute minimum of quadradic passing through y1, y2 and y3
+        # respectively at points x1, x2 and x3
         u = minimize_quadratic(x1, y1, x2, y2, x3, y3)
         α = clamp(u, α_min, α_max)
         t1 = (α - x1) * (α - x2) * y3 / ((x3 - x1) * (x3 - x2))
@@ -1921,7 +2049,7 @@ function minrn(x1::Float64, y1::Float64,
         pα = t1 + t2 + t3
     end
     return α, pα
-    end
+end
 
 
 
@@ -1934,7 +2062,7 @@ function parameters_rm(
     dds::Polynomial{Float64})
 
     dds_best = dds(x_min)
-    η, d = 0.1, 1.
+    η, d = 0.1, 1.0
     normv2 = dot(v2, v2)
     h0 = abs(ds(x_min) / dds_best)
     Dm = abs(6 * dot(v1, v2) + 12 * x_min * normv2) + 24 * h0 * normv2
@@ -1953,12 +2081,12 @@ function parameters_rm(
         if d < 0
             α_hat, β_hat = two_roots(b, c, d, a1, x_min)
 
-        # Only one root is computed
+            # Only one root is computed
         else
-    α_hat = one_root(c, d, a1)
+            α_hat = one_root(c, d, a1)
         end
 
-    # s'(α) = 0 is solved using Newton-Raphson's method
+        # s'(α) = 0 is solved using Newton-Raphson's method
     else
         α_hat = newton_raphson(x_min, Dm, ds, dds)
     end
@@ -1984,7 +2112,7 @@ function newton_raphson(
     dds::Polynomial{Float64})
 
     α, newton_iter = x_min, 0
-    ε, error = 1e-4, 1.
+    ε, error = 1e-4, 1.0
     while error > ε || newton_iter < 3
         c = dds(α)
         h = -ds(α) / c
@@ -2010,6 +2138,7 @@ function two_roots(b::Float64, c::Float64, d::Float64, a::Float64, x_min::Float6
     # β1 is the global minimizer of s(α).
     # If d is close to zero the root β1 is stable while β2 and β3 become unstable
     β1 = t * cos(φ / 3) - a / 3
+    
     β2 = t * cos((φ + 2 * π) / 3) - a / 3
     β3 = t * cos((φ + 4 * π) / 3) - a / 3
 
@@ -2045,6 +2174,7 @@ function minrm(
     end
     return α_hat, sα, β_hat, sβ
 end
+
 
 
 # REDC
@@ -2102,7 +2232,7 @@ function goldstein_armijo_step(
         ψu = psi(x, u, p, r, c, w, m, l, t, active, inactive)
         exit = (p_max * u < sqr_ε) || (u <= α_min)
     end
-    return u
+    return u, exit
 end
 
 
@@ -2156,6 +2286,7 @@ function linesearch_constrained(
     α_km1 = 0.0
     ψ_km1 = ψ0
     p_max = norm(p, Inf)
+    gac_error = false
 
     # LINC2
     # Computation of v1
@@ -2163,13 +2294,13 @@ function linesearch_constrained(
     if t != 0
         for i = 1:t
             k = active[i]
-            v1[m + k] = sqrt(w[k]) * v1[m + k]
+            v1[m+k] = sqrt(w[k]) * v1[m+k]
         end
     end
     if l - t != 0
-        for j = 1:l - t
+        for j = 1:l-t
             k = inactive[j]
-            v1[m + k] = (cx[k] > 0 ? 0.0 : sqrt(w[k]) * v1[m + k])
+            v1[m+k] = (cx[k] > 0 ? 0.0 : sqrt(w[k]) * v1[m+k])
         end
     end
 
@@ -2232,6 +2363,7 @@ function linesearch_constrained(
             α_km1 = α_k
             ψ_km1 = ψ_k
             α_k = α_kp1
+            
             ψ_k = psi(x, α_k, p, r, c, w, m, l, t, active, inactive)
             diff_psi = ψ0 - ψ_k
             reduction_likely = check_reduction(ψ_km1, ψ_k, pk, η, diff_psi)
@@ -2242,7 +2374,7 @@ function linesearch_constrained(
             α_km1 = α_k
             ψ_km1 = ψ_k
         end
-    # Termination condition not satisfied at α0
+        # Termination condition not satisfied at α0
     else
         diff_psi = ψ0 - ψ_k
         # Test termination condition at α1, i.e. α_k
@@ -2294,6 +2426,7 @@ function linesearch_constrained(
                 α_km1 = α_k
                 ψ_km1 = ψ_k
                 α_k = α_kp1
+                
                 ψ_k = psi(x, α_k, p, r, c, w, m, l, t, active, inactive)
 
                 reduction_likely = check_reduction(ψ_km1, ψ_k, pk, η, diff_psi)
@@ -2306,33 +2439,33 @@ function linesearch_constrained(
 
         else
             # Take a pure Goldstein-Armijo step
-            α_km1 = goldstein_armijo_step(ψ0, dψ0, α_min, τ, p_max, x, α_k, p, r, c, w, m, l, t, active, inactive)
+            α_km1, gac_error = goldstein_armijo_step(ψ0, dψ0, α_min, τ, p_max, x, α_k, p, r, c, w, m, l, t, active, inactive)
         end
     end
     α = α_km1
-    return α
+    return α, gac_error
 end
 
 # UPBND
 # Determine the upper bound of the steplength
 
 function upper_bound_steplength(
-        A::Matrix{Float64},
-        cx::Vector{Float64},
-        p::Vector{Float64},
-        inactive::Vector{Int64},
-        t::Int64,
-        l::Int64,
-        index_del::Int64
-    )
+    A::Matrix{Float64},
+    cx::Vector{Float64},
+    p::Vector{Float64},
+    inactive::Vector{Int64},
+    t::Int64,
+    l::Int64,
+    index_del::Int64
+)
 
     α_upper = Inf
     index_α_upp = 0
     if norm(inactive, Inf) > 0
-        for i = 1:l - t
+        for i = 1:l-t
             j = inactive[i]
             if j != index_del
-                ∇cjTp = dot(A[j,:], p)
+                ∇cjTp = dot(A[j, :], p)
                 α_j = -cx[j] / ∇cjTp
                 if cx[j] > 0 && ∇cjTp < 0 && α_j < α_upper
                     α_upper = α_j
@@ -2341,7 +2474,7 @@ function upper_bound_steplength(
             end
         end
     end
-    α_upper = min(3., α_upper)
+    α_upper = min(3.0, α_upper)
     return α_upper, index_α_upp
 end
 
@@ -2385,9 +2518,10 @@ function compute_steplength(
     weight_code::Int64)
 
     # Data
-    error = 0
+    Ψ_error = 0
     c1 = 1e-3
     rx_sum = dot(rx, rx)
+
     Jp = J * p
     Ap = A * p
     JpAp = vcat(Jp, Ap)
@@ -2398,47 +2532,52 @@ function compute_steplength(
     active_index = work_set.active[1:work_set.t]
     if method_code != 2
         # Compute penalty weights and derivative of ψ at α = 0
-        w, dψ0 = penalty_weight_update(w_old,Jp,active_Ap,K,rx,cx, work_set.active, work_set.t, dimA, weight_code)
+        w, dψ0 = penalty_weight_update(w_old, Jp, active_Ap, K, rx, cx, work_set.active, work_set.t, dimA, weight_code)
 
         #
         # Compute ψ(0) = 0.5 * [||r(x)||^2 +    Σ     (w_i*c_i(x)^2)]
         #                                   i ∈ active
-        ψ0 = 0.5 * (dot(rx, rx) + dot(w[active_index], cx[active_index].^2))
+        ψ0 = 0.5 * (dot(rx, rx) + dot(w[active_index], cx[active_index] .^ 2))
         # check is p is a descent direction
-        if dψ0 >= 0 
-            error = -1 
-            println("[compute_steplength] dérivée positive, error = $error")
+        if dψ0 >= 0
+            α = 1.0
+            Ψ_error = -1
+            iter.index_α_upp = 0
+        else
+
+            # Determine upper bound of the steplength
+            α_upp, index_α_upp = upper_bound_steplength(A, cx, p, work_set.inactive, work_set.t, work_set.l, ind_constraint_del)
+            α_low = α_upp / 3000.0
+
+            # Determine a first guess of the steplength
+            magfy = (rankJ2 < prev_rankJ2 ? 6.0 : 3.0)
+            α0 = min(1.0, magfy * previous_α, α_upp)
+            # Compute the steplength
+            
+            α, gac_error = linesearch_constrained(x, α0, p, r, c, rx, cx, JpAp, w, m, work_set.l, work_set.t, work_set.active, work_set.inactive, ψ0, dψ0, α_low, α_upp)
+            if gac_error 
+                ψ_k = psi(x,α,p,r,c,w,m,work_set.l,work_set.t,work_set.active,work_set.inactive)
+                Ψ_error = check_derivatives(dψ0,ψ0,ψ_k,x,α,p,r,c,w,m,work_set.l,work_set.t,work_set.active,work_set.inactive)
+            end
+
+            # Compute the predicted linear progress and actual progress
+            uppbound = min(1.0, α_upp)
+            atwa = dot(w[active_index], active_Ap .^ 2)
+            iter.predicted_reduction = uppbound * (-2.0 * dot(Jp, rx) - uppbound * dot(Jp, Jp) + (2.0 - uppbound^2) * atwa)
+
+            # Computation of new point and actual progress
+            # Evaluate residuals and constraints at the new point
+            r.ctrl = 1
+            c.ctrl = 1
+            rx_new = zeros(m)
+            cx_new = zeros(work_set.l)
+            r(x + α * p, rx_new, J)
+            c(x + α * p, cx_new, A)
+            whsum = dot(w[active_index], cx_new[active_index] .^ 2)
+            iter.progress = 2 * ψ0 - dot(rx_new, rx_new) - whsum
+            iter.index_α_upp = (index_α_upp != 0 && abs(α - α_upp) > 0.1 ? 0 : index_α_upp)
         end
 
-        # TODO : handle error due to ψ'(0) > 0
-
-        # Determine upper bound of the steplength
-        α_upp, index_α_upp = upper_bound_steplength(A, cx, p, work_set.inactive, work_set.t, work_set.l, ind_constraint_del)
-        α_low = α_upp / 3000.0
-
-        # Determine a first guess of the steplength
-        magfy = (rankJ2 < prev_rankJ2 ? 6.0 : 3.0)
-        α0 = min(1.0, magfy * previous_α, α_upp)
-       # Compute the steplength
-        α = linesearch_constrained(x, α0, p, r, c, rx, cx, JpAp, w, m, work_set.l, work_set.t, work_set.active, work_set.inactive, ψ0, dψ0, α_low, α_upp)
-
-
-        # Compute the predicted linear progress and actual progress
-        uppbound = min(1.0,α_upp)
-        atwa = dot(w[active_index],active_Ap.^2)
-        iter.predicted_reduction = uppbound * (-2.0 * dot(Jp,rx) - uppbound * dot(Jp,Jp) + (2.0-uppbound^2) * atwa)
-
-        # Computation of new point and actual progress
-        # Evaluate residuals and constraints at the new point
-        r.ctrl = 1
-        c.ctrl = 1
-        rx_new = zeros(m)
-        cx_new = zeros(work_set.l)
-        r(x+α*p,rx_new,J)
-        c(x+α*p,cx_new,A)
-        whsum = dot(w[active_index], cx_new[active_index].^2)
-        iter.progress = 2*ψ0 - dot(rx_new,rx_new) - whsum
-        
     else
         # Take an undamped step
 
@@ -2447,9 +2586,37 @@ function compute_steplength(
         index_α_upp = 0
         α = 1.0
     end
+    
+    return α, w, Ψ_error
+end
 
-    iter.index_α_upp = (index_α_upp != 0 && abs(α - α_upp) > 0.1 ? 0 : index_α_upp)
-    return α, w
+function check_derivatives(
+    dψ0::Float64,
+    ψ0::Float64,
+    ψ_k::Float64,
+    x_old::Vector{Float64},
+    α::Float64,
+    p::Vector{Float64},
+    r::ResidualsEval,
+    c::ConstraintsEval,
+    w::Vector{Float64},
+    m::Int64,
+    l::Int64,
+    t::Int64,
+    active::Vector{Int64},
+    inactive::Vector{Int64})
+
+    ctrl = -1
+    ψ_mα = psi(x_old,-α,p,r,c,w,m,l,t,active,inactive)
+    dψ_forward = (ψ_k - ψ0) / α
+    dψ_backward = (ψ0 - ψ_mα) / α
+    dψ_central = (ψ_k - ψ_mα) / (2*α)
+    max_diff = maximum(map(abs,[dψ_forward-dψ_central , dψ_forward - dψ_backward, dψ_backward - dψ_central]))
+    inconsistency = abs(dψ_forward-dψ0) > max_diff && abs(dψ_central-dψ0) > max_diff
+    exit = (inconsistency ? -1 : 0)
+
+    return exit
+
 end
 
 function evaluation_restart!(iter::Iteration, error_code::Int64)
@@ -2539,20 +2706,23 @@ function check_termination_criteria(
     ε_rel::Float64,
     ε_x::Float64,
     ε_c::Float64,
-    error_code::Int64)
+    error_code::Int64,
+    sigmin::Float64,
+    λ_abs_max::Float64,
+    Ψ_error::Int64)
 
     exit_code = 0
     alfnoi = ε_rel / (norm(iter.p) + ε_abs)
-    iter.grad_res = norm(transpose(active_C.A) * iter.λ - ∇fx)
 
     # Preliminary conditions
-    preliminary_cond = !(iter.restart || (iter.code == -1  && alfnoi <= 0.25))
+    preliminary_cond = !(iter.restart || (iter.code == -1 && alfnoi <= 0.25))
+
     if preliminary_cond
 
         # Check necessary conditions
         necessary_crit = (!iter.del) && (norm(active_C.cx) < ε_c) && (iter.grad_res < sqrt(ε_rel) * (1 + norm(∇fx)))
         if W.l - W.t > 0
-            inactive_index = W.inactive[1:(W.l - W.t)]
+            inactive_index = W.inactive[1:(W.l-W.t)]
             inactive_cx = cx[inactive_index]
             necessary_crit = necessary_crit && (all(>(0), inactive_cx))
         end
@@ -2561,14 +2731,16 @@ function check_termination_criteria(
             if W.t == 1
                 factor = 1 + rx_sum
             elseif W.t > 1
-                factor =  maximum(map(abs, iter.λ))
+                factor = λ_abs_max
             end
-            lagrange_mult_pos = [iter.λ[i] for i = W.q + 1:W.t if iter.λ[i] > 0]
+            lagrange_mult_pos = [iter.λ[i] for i = W.q+1:W.t if iter.λ[i] > 0]
             sigmin = (isempty(lagrange_mult_pos) ? 0 : minimum(lagrange_mult_pos))
             necessary_crit = necessary_crit && (sigmin >= ε_rel * factor)
-
         end
 
+
+        
+        
         if necessary_crit
             # Check the sufficient conditions
             d1 = @view iter.d_gn[1:iter.dimJ2]
@@ -2597,19 +2769,24 @@ function check_termination_criteria(
         # Check abnormal termination criteria
         x_diff = norm(prev_iter.x - iter.x)
         Atcx_nrm = norm(transpose(active_C.A) * active_C.cx)
-        active_penalty_sum = (W.t == 0 ? 0.0 : dot(iter.w[W.active[1:W.t]],iter.w[W.active[1:W.t]]))
+        active_penalty_sum = (W.t == 0 ? 0.0 : dot(iter.w[W.active[1:W.t]], iter.w[W.active[1:W.t]]))
+        
         # Criterion 9
         if nb_iter >= max_iter
             exit_code = -2
 
-        # Criterion 12
+            # Criterion 12
         elseif error_code == -3
             exit_code = -5
-        # Too many Newton steps
+            # Too many Newton steps
+        
         elseif iter.nb_newton_steps > 5
             exit_code = -9
-
-        # test if impossible to satisfy the constraints
+        
+        elseif Ψ_error == -1
+            exit_code = -6
+            # test if impossible to satisfy the constraints
+        
         elseif x_diff <= 10.0 * ε_x && Atcx_nrm <= 10.0 * ε_c && active_penalty_sum >= 1.0
             exit_code = -10
         end
@@ -2626,19 +2803,20 @@ function output!(
     iter::Iteration,
     W::WorkingSet,
     nb_iter::Int64,
-    β_prev::Float64,
+    rx_sum::Float64,
     cx_sum::Float64)
 
     if norm(W.active, Inf) > 0
         s_act = "("
-        for i = 1:W.t
+        # Pour ne pas afficher trop d'indices
+        for i = 1:min(5,W.t)
             s_act = (i < W.t ? string(s_act, W.active[i], ",") : string(s_act, W.active[i], ")"))
         end
     else
         s_act = " -"
     end
     speed = (nb_iter == 0 ? 0.0 : iter.speed) # iter.β / β_prev
-    @printf(io, "  %2d  %e  %.2e  %9.2e   %.3e %3d   %3d   %.2e    %.2e     %.2e    %s\n",  nb_iter, dot(iter.rx, iter.rx), cx_sum, iter.progress, norm(iter.p), iter.dimA, iter.dimJ2, iter.α, speed, maximum(iter.w), s_act)
+    @printf(io, "  %2d  %e  %.2e  %9.2e   %.3e %3d   %3d   %.2e    %.2e     %.2e    %s\n", nb_iter, rx_sum, cx_sum, iter.progress, norm(iter.p), iter.dimA, iter.dimJ2, iter.α, speed, maximum(iter.w), s_act)
 end
 
 function final_output!(
@@ -2649,16 +2827,16 @@ function final_output!(
     nb_iter::Int64)
 
     @printf(io, "\nExit code = %d\nNumber of iterations = %d \n\n", exit_code, nb_iter)
-    print(io,"Terminated at point :")
-    (t -> @printf(io," %e ", t)).(iter.x)
-    print(io,"\n\nActive constraints :")
-    (i -> @printf(io," %d ", i)).(W.active[1:W.t])
-    println(io,"\nConstraint values : ")
+    print(io, "Terminated at point :")
+    (t -> @printf(io, " %e ", t)).(iter.x)
+    print(io, "\n\nActive constraints :")
+    (i -> @printf(io, " %d ", i)).(W.active[1:W.t])
+    println(io, "\nConstraint values : ")
     (t -> @printf(io, " %.2e ", t)).(iter.cx)
-    println(io,"\nPenalty constants :")
+    println(io, "\nPenalty constants :")
     (t -> @printf(io, " %.2e ", t)).(iter.w)
 
-    @printf(io, "\nSquare sum of residuals = %e\n\n", dot(iter.rx, iter.rx))
+    @printf(io, "\n\nSquare sum of residuals = %e\n\n", dot(iter.rx, iter.rx))
 end
 
 function output_iter_for_comparison(
@@ -2666,8 +2844,8 @@ function output_iter_for_comparison(
     iter::Iteration,
     W::WorkingSet,
     nb_iter::Int64,
-    β_prev::Float64,
-    cx_sum::Float64)
+    cx_sum::Float64,
+    rx_sum)
 
     if norm(W.active, Inf) > 0
         s_act = "("
@@ -2677,16 +2855,16 @@ function output_iter_for_comparison(
     else
         s_act = " -"
     end
-    speed = (nb_iter == 0 ? 0.0 : iter.β / β_prev)
-    to_string_e = ( x -> mimic_fortran_e_format(x,5) )
+    speed = (nb_iter == 0 ? 0.0 : iter.speed)
+    to_string_e = (x -> mimic_fortran_e_format(x, 5))
     @printf(io, "%5d%15s%13s%13s%13s %3d  %3d%13s%13s%13s%13s%13s\n",
-            nb_iter, mimic_fortran_e_format(dot(iter.rx, iter.rx),7),
-            to_string_e(cx_sum), to_string_e(iter.grad_res), to_string_e(norm(iter.p)),
-            iter.dimA, iter.dimJ2, to_string_e(iter.α), to_string_e(speed), to_string_e(maximum(iter.w)),
-            to_string_e(iter.predicted_reduction), to_string_e(iter.progress))
-    print_tabulated_format(io, filter((n-> n>0),W.active), formater= (n -> @sprintf("%4d",n)),
-                           header="       ", line_prefix="       ", separator="",
-                           trailer= "", nb_columns= 50, characters_per_line= 500)
+        nb_iter, mimic_fortran_e_format(rx_sum, 7),
+        to_string_e(cx_sum), to_string_e(iter.grad_res), to_string_e(norm(iter.p)),
+        iter.dimA, iter.dimJ2, to_string_e(iter.α), to_string_e(speed), to_string_e(maximum(iter.w)),
+        to_string_e(iter.predicted_reduction), to_string_e(iter.progress))
+    print_tabulated_format(io, filter((n -> n > 0), W.active), formater=(n -> @sprintf("%4d", n)),
+        header="       ", line_prefix="       ", separator="",
+        trailer="", nb_columns=50, characters_per_line=500)
 end
 
 function final_output_for_comparison(
@@ -2697,63 +2875,74 @@ function final_output_for_comparison(
     nb_iter::Int64,
     MAX_ITER::Int64,
     m::Int64,
-    q::Int64,
     weight_code::Int64,
-    τ, ε_abs, ε_rel, ε_x, ε_c,
+    ε_rank, ε_abs, ε_rel, ε_x, ε_c,
     cx_sum::Float64)
 
     @printf(io, "\n\nExit code = %8d    Number of iterations = %5d   Speed = %s\n",
-            exit_code, nb_iter, mimic_fortran_e_format(iter.speed,5))
+        exit_code, nb_iter, mimic_fortran_e_format(iter.speed, 5))
     @printf(io, " RankA = %4i   P = %4i   RankJ2 = %4i   M = %5i\n",
-            iter.rankA, W.t, iter.rankJ2, m)
+        iter.rankA, W.t, iter.rankJ2, m)
     rx2 = dot(iter.rx, iter.rx)
     @printf(io, "Square sum of residuals = %s   Sum of squared constraints value = %s\n",
-            mimic_fortran_e_format(rx2,6), mimic_fortran_e_format(cx_sum,6))
+        mimic_fortran_e_format(rx2, 6), mimic_fortran_e_format(cx_sum, 6))
     #print(io,"At point :")
     #(t -> @printf(io," %e ", t)).(iter.x)
-    print_tabulated_format(io, iter.x, formater=(t -> mimic_fortran_e_format(t,8)),
-                           header="\nAt the point :\n ", line_prefix=" ", separator=" ",
-                           trailer= "\n", nb_columns= 6)
+    print_tabulated_format(io, iter.x, formater=(t -> mimic_fortran_e_format(t, 8)),
+        header="\nAt the point :\n ", line_prefix=" ", separator=" ",
+        trailer="\n", nb_columns=6)
     #println(io,"\nActive constraints :")
     #(i -> @printf(io," %d ", i)).(W.active[1:W.t])
     print_tabulated_format(io, W.active[1:W.t], formater=(i -> @sprintf("%4d", i)),
-                           header="\nActive constraints :\n    ", trailer= "\n", nb_columns= 50)
+        header="\nActive constraints :\n    ", trailer="\n", nb_columns=50)
     #println(io,"\nConstraint values : ")
     #(t -> @printf(io, " %.2e ", t)).(iter.cx)
-    print_tabulated_format(io, iter.cx, formater=(t -> mimic_fortran_e_format(t,5)),
-                           header="Constraint values :\n   ", line_prefix="   ", separator=" ",
-                           trailer= "\n", nb_columns= 6)
+    print_tabulated_format(io, iter.cx, formater=(t -> mimic_fortran_e_format(t, 5)),
+        header="Constraint values :\n   ", line_prefix="   ", separator=" ",
+        trailer="\n", nb_columns=6)
     #println(io,"\nPenalty constants :")
     #(t -> @printf(io, " %.2e ", t)).(iter.w)
-    print_tabulated_format(io, iter.w, formater=(t -> mimic_fortran_e_format(t,5)),
-                           header="Penalty constants :\n   ", line_prefix="   ", separator=" ",
-                           trailer= "\n", nb_columns= 6)
-    @printf(io,"\n\nDefault values\nIPRINT =  %3d\nNOUT =    %3d\nMAXIT = %5d\nNORM =    %3d\n",
-            1, 4, MAX_ITER, weight_code)
-    @printf(io,"TOL    = %s\nEPSREL = %s\nEPSABS = %s\nEPSX   = %s\nEPSH   = %s\n",
-            mimic_fortran_e_format(τ,6),
-            mimic_fortran_e_format(ε_rel,6),
-            mimic_fortran_e_format(ε_abs,6),
-            mimic_fortran_e_format(ε_x,6),
-            mimic_fortran_e_format(ε_c,6))
+    print_tabulated_format(io, iter.w, formater=(t -> mimic_fortran_e_format(t, 5)),
+        header="Penalty constants :\n   ", line_prefix="   ", separator=" ",
+        trailer="\n", nb_columns=6)
+    @printf(io, "\n\nDefault values\nIPRINT =  %3d\nNOUT =    %3d\nMAXIT = %5d\nNORM =    %3d\n",
+        1, 4, MAX_ITER, weight_code)
+    @printf(io, "TOL    = %s\nEPSREL = %s\nEPSABS = %s\nEPSX   = %s\nEPSH   = %s\n",
+        mimic_fortran_e_format(ε_rank, 6),
+        mimic_fortran_e_format(ε_rel, 6),
+        mimic_fortran_e_format(ε_abs, 6),
+        mimic_fortran_e_format(ε_x, 6),
+        mimic_fortran_e_format(ε_c, 6))
+    println(io, "Tolerance pseudo rang ", ε_rank)
 
 end
 
-function mimic_fortran_e_format(num, precision_e = 8)
-    str = sprintf1("%"*string(precision_e + 6)*"."*string(precision_e - 1)*"E", num)
-    if (tryparse(Int, str[precision_e + 4:precision_e + 6]) == nothing)
-        println("[mimic_fortran_e_format] bad string to parse: ",
-                "#",str[precision_e + 4:precision_e + 6],"#  from  #",str,"#",
-                " num: ",num," precision: ",precision_e)
-        return "***"
-  else
-    new_exponent = parse(Int, str[precision_e + 4:precision_e + 6]) + ( str[2] == '0' ? 0 : 1)
-    suffix = @sprintf("%+03i", new_exponent) #- il ne faut pas additionner si les chiffres sont tous des zeros -, l'exposant devrait etre zero aussi
-   # en fait il suffit de valider le premier chiffre, il devrait etre non nul.
-    str2 = str[1:1]*"0."*str[2:2]*str[4:precision_e + 3]*suffix
-    return str2
-  end
+function mimic_fortran_e_format(num, precision_e=8)
+    str = ""
+    if (isnan(num))
+        str = " NaN" * " "^(precision_e + 3)
+    else
+        str = sprintf1("%" * string(precision_e + 7) * "." * string(precision_e - 1) * "E", num)
+        debut_exposant = findlast("E", str)[1] + 1
+        extra = debut_exposant == precision_e + 4
+        if (tryparse(Int, str[debut_exposant:precision_e+7]) === nothing)
+            println("[mimic_fortran_e_format] bad string to parse: ",
+                "#", str[precision_e+4:precision_e+6], "#  from  #", str, "#",
+                " num: ", num, " precision: ", precision_e)
+            str = "***"
+        else
+            new_exponent = parse(Int, str[debut_exposant:precision_e+7]) + (str[2] == '0' ? 0 : 1)
+            #- il ne faut pas additionner si les chiffres sont tous des zeros -, l'exposant devrait etre zero aussi
+            # en fait il suffit de valider le premier chiffre, il devrait etre non nul.
+            extraexp = new_exponent >= 99 || new_exponent < -99
+            suffix = extra ? @sprintf("E%+04i", new_exponent) : @sprintf("E%+03i", new_exponent)
+            str2 = str[2-extra:2-extra] * "0." * str[3-extra:3-extra] * str[5-extra:precision_e+3-extra-extraexp] * suffix
+            str = str2
+        end
+    end
+    return str
 end
+
 
 function print_tabulated_format(
     io::IOStream,
@@ -2765,7 +2954,7 @@ function print_tabulated_format(
     trailer="",
     nb_columns=1,
     characters_per_line=25000)
-    
+
     nb_elements = length(data)
     len_separator = length(separator)
     index = 0
@@ -2779,30 +2968,31 @@ function print_tabulated_format(
             len_separator = 0
         end
         str = formater(data[index])
-        if ( str == nothing )
+        if (str == nothing)
             println("[print_tabulated_format] formater returned nothing.",
-                    " data: ",data[index]," formater: ", formater)
+                " data: ", data[index], " formater: ", formater)
         end
-        if ( (column > nb_columns) |
-                (characters + length(str) + len_separator > characters_per_line) )
-            println(io,"")
+        if ((column > nb_columns) |
+            (characters + length(str) + len_separator > characters_per_line))
+            println(io, "")
             print(io, line_prefix)
             characters = length(line_prefix)
             column = 1
         end
-        print(io,str)
+        print(io, str)
         characters += length(str)
         if (index < nb_elements)
-            print(io,separator)
+            print(io, separator)
             characters += len_separator
         end
     end
-    if ( characters + length(trailer) > characters_per_line)
-        println(io,"")
+    if (characters + length(trailer) > characters_per_line)
+        println(io, "")
         print(io, line_prefix)
     end
-    println(io,trailer)
+    println(io, trailer)
 end
+
 
 ##### ENLSIP 0.4.0 #####
 
@@ -2860,56 +3050,54 @@ The following arguments are optionnal and have default values:
 
     - default are the recommended one by the authors, i.e. 
 
-        - `ε_rel = ε_x = ε_c = 1e-3` 
-        - `ε_abs = 1e-10`
+        - `ε_x = 1e-3` 
+        - `ε_c = 1e-4` 
+        - `ε_rel = 1e-5` 
+        - `ε_abs = ε_rank 1e-10`
 """
 function enlsip(x0::Vector{Float64},
-    r::ResidualsEval,c::ConstraintsEval,
-    n::Int64,m::Int64,q::Int64,l::Int64;
+    r::ResidualsEval, c::ConstraintsEval,
+    n::Int64, m::Int64, q::Int64, l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
-    ε_abs = 1e-10,ε_rel = 1e-3,ε_x = 1e-3,ε_c = 1e-3,
-    compare_file::String = "")
+    ε_abs=1e-10, ε_rel=1e-5, ε_x=1e-3, ε_c=1e-4, ε_rank::Float64=1e-10,
+    verbose::Bool=false)
 
     function output_header(io)
-        println(io,"")
-        println(io,"****************************************")
-        println(io,"*                                      *")
-        println(io,"*          ENLSIP-JULIA-0.4.0          *")
-        println(io,"*                                      *")
-        println(io,"****************************************\n")
-        println(io,"Starting point : $x0\n")
+        println(io, "")
+        println(io, "****************************************")
+        println(io, "*                                      *")
+        println(io, "*          ENLSIP-JULIA-0.4.0          *")
+        println(io, "*                                      *")
+        println(io, "****************************************\n")
+        println(io, "Starting point : $x0\n")
         print_tabulated_format(io, x0, formater=(t -> @sprintf(" %e ", t)),
-                               header="Starting point :\n   ", line_prefix="   ", separator=" ",
-                               trailer= "\n", nb_columns= 10)
-        println(io,"Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)")
+            header="Starting point :\n   ", line_prefix="   ", separator=" ",
+            trailer="\n", nb_columns=10)
+        println(io, "Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)")
         println(io, "Constraints internal scaling     : $scaling\n")
         println(io, "\nIteration steps information\n")
-        println(io,"iter     objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
+        println(io, "iter     objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
     end
 
     function output_header_for_comparison(io)
-        print(io,"ENLSIP-JULIA-0.4.0\n\n")
+        print(io, "ENLSIP-JULIA-0.4.0\n\n")
         print_tabulated_format(io, x0, formater=(x -> mimic_fortran_e_format(x, 8)),
-                               header="Starting point :\n   ", line_prefix="   ", separator=" ",
-                               trailer= "\n", nb_columns= 6)
-        println(io,"Number of equality constraints   : ",@sprintf("%5i",q))
-        println(io,"Number of inequality constraints : ",@sprintf("%5i",(l-q)))
+            header="Starting point :\n   ", line_prefix="   ", separator=" ",
+            trailer="\n", nb_columns=6)
+        println(io, "Number of equality constraints   : ", @sprintf("%5i", q))
+        println(io, "Number of inequality constraints : ", @sprintf("%5i", (l - q)))
         println(io, "Constraints internal scaling     : $scaling\n")
         println(io, "\nIteration steps information\n")
-        println(io,"iter     objective       cx_sum      grad_res      ||p||    dimA dimJ2   alpha     conv. speed   max weight   predicted    reduction    (working set : following lines)")
+        println(io, "iter     objective       cx_sum      grad_res      ||p||    dimA dimJ2   alpha     conv. speed   max weight   predicted    reduction    (working set : following lines)")
     end
-    
-    output_file = "output.txt"
-    do_compare = ! isempty(compare_file) 
+
+    output_file = "enlsip.out"
     io = open(output_file, "w")
-    io_compare = do_compare ? open(compare_file, "w") : false
-    
-    output_header(io)
-    if (do_compare) output_header_for_comparison(io_compare) end
-    
+
+    output_header_for_comparison(io)
+
     nb_iteration = 0
     nb_eval = 0
-
     # Double relative precision
     ε_float = eps(Float64)
     # Vector of penalty constants
@@ -2920,23 +3108,27 @@ function enlsip(x0::Vector{Float64},
     J, A = zeros(m, n), zeros(l, n)
     r.ctrl = 1
     c.ctrl = 1
-    r(x0, rx, J)
-    c(x0, cx, A)
+    r(x0, rx, J) # residu
+    
+    c(x0, cx, A) # contraintes
+
     nb_eval += 1
     # First Iteration
     x_opt = x0
-    f_opt = dot(rx,rx)
-    first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, 0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0., 0., 0., 0., 0., false, true, false, false, 0, 1,0)
-    println("Iter 0")
+    f_opt = dot(rx, rx)
+    first_iter = Iteration(x0, zeros(n), rx, cx, l, 1.0, 0, zeros(l), zeros(l), 0, 0, 0, 0, zeros(n), zeros(n), 0.0, 0.0, 0.0, 0.0, 0.0, false, true, false, false, 0, 1, 0)
+    # println( "Iter 0")
+    
     # Initialization of the working set
     working_set = init_working_set(cx, K, first_iter, q, l)
 
     first_iter.t = working_set.t
 
-    # Compute jacobians at current point
+    # Compute jacobians at current point    
+
     new_point!(x0, r, rx, c, cx, J, A, n, m, l)
 
-    active_C = Constraint(cx[working_set.active[1:working_set.t]], A[working_set.active[1:working_set.t],:], scaling, zeros(working_set.t))
+    active_C = Constraint(cx[working_set.active[1:working_set.t]], A[working_set.active[1:working_set.t], :], scaling, zeros(working_set.t))
 
     # Gradient of the objective function
     ∇fx = transpose(J) * rx
@@ -2946,21 +3138,24 @@ function enlsip(x0::Vector{Float64},
     # Estimation of the Lagrange multipliers
     # Computation of the Gauss-Newton search direction
     evaluate_scaling!(active_C)
-    P1, L11, Q1, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter)
+
+
+    P1, L11, Q1, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter, ε_rank)
+ 
     rx_sum = dot(rx, rx)
-    active_cx_sum = dot(cx[working_set.active[1:working_set.t]],cx[working_set.active[1:working_set.t]])
+    active_cx_sum = dot(cx[working_set.active[1:working_set.t]], cx[working_set.active[1:working_set.t]])
     first_iter.t = working_set.t
     previous_iter = copy(first_iter)
-    J2 = (J * Q1)[:,first_iter.rankA + 1:end]
+    J2 = (J*Q1)[:, first_iter.rankA+1:end]
     nrm_b1 = norm(first_iter.b_gn[1:first_iter.dimA])
     nrm_d1 = norm(first_iter.d_gn[1:first_iter.dimJ2])
     nrm_d = norm(first_iter.d_gn)
 
     # Analys of the lastly computed search direction
-    error_code = search_direction_analys(previous_iter,first_iter,nb_iteration,x0,c,r,rx,cx,active_C.cx,first_iter.λ,rx_sum,active_cx_sum,p_gn,first_iter.d_gn,first_iter.b_gn,nrm_b1,nrm_d1,nrm_d,J,m,n,working_set,first_iter.rankA,first_iter.rankJ2,P1,Q1,L11,F_L11,F_J2,first_iter.add,first_iter.del,active_C.scaling,active_C.diag_scale)
-
+    error_code = search_direction_analys(previous_iter, first_iter, nb_iteration, x0, c, r, rx, cx, active_C.cx, first_iter.λ, rx_sum, active_cx_sum, p_gn, first_iter.d_gn, first_iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, first_iter.rankA, first_iter.rankJ2, P1, Q1, L11, F_L11, F_J2, first_iter.add, first_iter.del, active_C.scaling, active_C.diag_scale)
+ 
     # Computation of penalty constants and steplentgh
-    α, w = compute_steplength(first_iter,x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
+    α, w, Ψ_error = compute_steplength(first_iter, x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
     first_iter.α = α
     first_iter.w = w
     x = x0 + α * first_iter.p
@@ -2976,24 +3171,27 @@ function enlsip(x0::Vector{Float64},
     ∇fx = transpose(J) * rx
 
     # Check for termination criterias at new point
-    evaluation_restart!(first_iter,error_code)
-    exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c,error_code)
+    evaluation_restart!(first_iter, error_code)
+
+    sigmin, λ_abs_max = minmax_lagrangian_mult(first_iter.λ, working_set.q, working_set.t, active_C.scaling, active_C.diag_scale)
+    exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum,
+        ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c, error_code, sigmin, λ_abs_max, Ψ_error)
 
     # Print collected informations about the first iteration
-    output!(io,first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
-    if (do_compare)
-        output_iter_for_comparison(io_compare,first_iter, working_set, nb_iteration, 0.0, active_cx_sum)
-    end
+    output_iter_for_comparison(io, first_iter, working_set, nb_iteration, active_cx_sum, f_opt)
+    flush(io)
 
     # Check for violated constraints and add it to the working set
-    first_iter.add = evaluate_violated_constraints(cx, working_set,first_iter.index_α_upp)
+    first_iter.add = evaluate_violated_constraints(cx, working_set, first_iter.index_α_upp)
+
     active_C.cx = cx[working_set.active[1:working_set.t]]
-    active_C.A = A[working_set.active[1:working_set.t],:]
+    active_C.A = A[working_set.active[1:working_set.t], :]
 
     previous_iter = copy(first_iter)
     first_iter.x = x
     first_iter.rx = rx
     first_iter.cx = cx
+    f_opt = dot(rx, rx)
     nb_iteration += 1
     iter = copy(first_iter)
     iter.first = false
@@ -3002,26 +3200,28 @@ function enlsip(x0::Vector{Float64},
 
     # Main loop for next iterations
 
+
+
     while exit_code == 0
 
-        println("\nIter $nb_iteration\n")
+        # println( "\nIter $nb_iteration\n")
         p_gn = zeros(n)
+
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
         evaluate_scaling!(active_C)
-        P1, L11, Q1, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter)
-        active_cx_sum = dot(cx[working_set.active[1:working_set.t]],cx[working_set.active[1:working_set.t]])
+        P1, L11, Q1, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter, ε_rank)
+        active_cx_sum = dot(cx[working_set.active[1:working_set.t]], cx[working_set.active[1:working_set.t]])
         iter.t = working_set.t
-        J2 = (J * Q1)[:, iter.rankA+1:end]
+        J2 = (J*Q1)[:, iter.rankA+1:end]
         nrm_b1 = norm(iter.b_gn[1:iter.dimA])
         nrm_d1 = norm(iter.d_gn[1:iter.dimJ2])
         nrm_d = norm(iter.d_gn)
 
         # Analys of the lastly computed search direction
-        error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, iter.rankA, iter.rankJ2, P1, Q1, L11, F_L11, F_J2, iter.add, iter.del,active_C.scaling,active_C.diag_scale,iter.restart)
-
+        error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, iter.rankA, iter.rankJ2, P1, Q1, L11, F_L11, F_J2, iter.add, iter.del, active_C.scaling, active_C.diag_scale, iter.restart)
         # Computation of penalty constants and steplentgh
-        α, w = compute_steplength(iter,x,r,rx,J,iter.p,c,cx,A,active_C,previous_iter.w,working_set,K,iter.dimA,m,iter.index_del,previous_iter.α,previous_iter.rankJ2,iter.rankJ2,iter.code,weight_code)
+        α, w, Ψ_error = compute_steplength(iter, x, r, rx, J, iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, iter.dimA, m, iter.index_del, previous_iter.α, previous_iter.rankJ2, iter.rankJ2, iter.code, weight_code)
         iter.α = α
         iter.w = w
         x = x + α * iter.p
@@ -3032,56 +3232,55 @@ function enlsip(x0::Vector{Float64},
         r(x, rx, J)
         rx_sum = dot(rx, rx)
         c(x, cx, A)
+
+
         new_point!(x, r, rx, c, cx, J, A, n, m, l)
         ∇fx = transpose(J) * rx
 
         # Check for termination criterias at new point
-        evaluation_restart!(iter,error_code)
-        exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c, error_code)
+        evaluation_restart!(iter, error_code)
+
+        sigmin, λ_abs_max = minmax_lagrangian_mult(iter.λ, working_set.q, working_set.t, active_C.scaling, active_C.diag_scale)
+        exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration,
+            ε_abs, ε_rel, ε_x, ε_c, error_code, sigmin, λ_abs_max, Ψ_error)
 
         # Print collected informations about current iteration
         # Another step is required
         if (exit_code == 0)
             # Print collected informations about current iteration
-            output!(io,iter, working_set, nb_iteration, previous_iter.β, active_cx_sum)
-            if (do_compare) output_iter_for_comparison(io_compare, iter, working_set, nb_iteration, previous_iter.β, active_cx_sum) end
-            
+            output_iter_for_comparison(io, iter, working_set, nb_iteration, active_cx_sum, f_opt)
+
             # Check for violated constraints and add it to the working set
 
             iter.add = evaluate_violated_constraints(cx, working_set, iter.index_α_upp)
             active_C.cx = cx[working_set.active[1:working_set.t]]
-            active_C.A = A[working_set.active[1:working_set.t],:]
+            active_C.A = A[working_set.active[1:working_set.t], :]
 
             # Update iteration data field
+        
             nb_iteration += 1
             previous_iter = copy(iter)
             iter.x = x
             iter.rx = rx
             iter.cx = cx
+            f_opt = dot(rx, rx)
             iter.del = false
             iter.add = false
+
+            
+
         else
             # Algorithm has terminated
             x_opt = x
             f_opt = dot(rx,rx)
-            final_output!(io, iter, working_set, exit_code, nb_iteration)
-            if (do_compare) final_output_for_comparison(io_compare, iter, working_set,
-                                                        exit_code, nb_iteration,
-                                                        MAX_ITER, m, q, weight_code,
-                                                        sqrt(eps(Float64)), ε_abs, ε_rel, ε_x, ε_c,
-                                                        active_cx_sum) end
+            final_output_for_comparison(io, iter, working_set, exit_code, nb_iteration, MAX_ITER, m, weight_code, ε_rank, ε_abs, ε_rel, ε_x, ε_c, active_cx_sum)
         end
         flush(io)
-
-
     end
 
     # Close the IO Stream and print some collected informations
     close(io)
-    for s in readlines(output_file)
-        println(s)
-    end
-    rm(output_file)
-    if (do_compare) close(io_compare) end
+    verbose && (s -> println(s)).(readlines(output_file))
+
     return ENLSIP(exit_code, x_opt, f_opt)
 end
