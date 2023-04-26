@@ -3228,7 +3228,6 @@ function enlsip(x0::Vector{Float64},
 
     nb_iteration = 0
     nb_eval = 0
-    # MAX_ITER = 1
     # Double relative precision
     ε_float = eps(Float64)
     # Vector of penalty constants
@@ -3417,9 +3416,7 @@ function enlsip(x0::Vector{Float64},
             # Algorithm has terminated
             x_opt = x
             f_opt = dot(rx,rx)
-            # final_output!(io, iter, working_set, exit_code, nb_iteration)
             final_output_for_comparison(io, iter, working_set, exit_code, nb_iteration, MAX_ITER, m, weight_code, ε_rank, ε_abs, ε_rel, ε_x, ε_c, active_cx_sum)
-            CSV.write("iterates.csv", df_iterates, delim=";")
         end
         flush(io)
     end
