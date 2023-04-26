@@ -410,9 +410,8 @@ function sub_search_direction(
         d_temp = -J1 * p1 - rx
         d = F_J2.Q' * d_temp
         δp2 = UpperTriangular(F_J2.R[1:dimJ2, 1:dimJ2]) \ d[1:dimJ2]
-        # p2 = [δp2; zeros(n - t - dimJ2)][invperm(F_J2.p)]
-        p2 = F_J2.P * [δp2; zeros(n - t - dimJ2)]
-
+        # p2 = F_J2.P * [δp2; zeros(n - t - dimJ2)]
+        p2 = [δp2; zeros(n - t - dimJ2)][invperm(F_J2.p)]
         # Solving with stabilization
     elseif code == -1
         b_temp = -transpose(P1) * cx
@@ -422,8 +421,8 @@ function sub_search_direction(
         d_temp = -J1 * p1 - rx
         d = F_J2.Q' * d_temp
         δp2 = UpperTriangular(F_J2.R[1:dimJ2, 1:dimJ2]) \ d[1:dimJ2]
-        # p2 = [δp2; zeros(n - rankA - dimJ2)][invperm(F_J2.p)]
-        p2 = F_J2.P * [δp2; zeros(n - rankA - dimJ2)]
+        # p2 = F_J2.P * [δp2; zeros(n - rankA - dimJ2)]
+        p2 = [δp2; zeros(n - rankA - dimJ2)][invperm(F_J2.p)]
     end
 
     p = Q1 * [p1; p2]
@@ -750,7 +749,7 @@ function first_lagrange_mult_estimate!(
     (t, n) = size(A)
     v = zeros(t)
     vnz = zeros(t)
-    
+    inv_p = invperm(F.p)
     prankA = pseudo_rank(diag(F.R), ε_rank)
 
     b = F.Q' * ∇fx
@@ -759,7 +758,8 @@ function first_lagrange_mult_estimate!(
     if prankA < t
         v[prankA+1:t] = zeros(t - prankA)
     end
-    λ_ls = F.P * v
+    # λ_ls = F.P * v
+    λ_ls = v[inv_p]
 
     # Compute norm of residual
     iter.grad_res = (n > prankA ? norm(b[prankA+1:n]) : 0.0)
@@ -768,7 +768,8 @@ function first_lagrange_mult_estimate!(
     #                  -1
     # λ = λ_ls - (A*A^T) *cx
 
-    b = -transpose(F.P) * cx
+    # b = -transpose(F.P) * cx
+    b = -cx[F.p]
     y = zeros(t)
     #                -1
     # Compute y =(L11) * b
@@ -777,8 +778,8 @@ function first_lagrange_mult_estimate!(
     # Compute u = R  * y
     u = zeros(t)
     u[1:prankA] = UpperTriangular(F.R[1:prankA, 1:prankA]) \ y[1:prankA]
-    λ[:] = λ_ls + F.P * u
-
+    # λ[:] = λ_ls + F.P * u
+    λ[:] = λ_ls + u[inv_p]
     # Back transform due to row scaling of matrix A
     if scaling_done
         λ[:] = λ .* diag_scale
@@ -792,9 +793,7 @@ end
 # Solves the system  A * λ = J(x) (r(x) + J(x) * p_gn))
 function second_lagrange_mult_estimate!(
     J::Matrix{Float64},
-    Q1::Matrix{Float64},
-    R::Matrix{Float64},
-    P1::Matrix{Float64},
+    F_A::Factorization,
     λ::Vector{Float64},
     rx::Vector{Float64},
     p_gn::Vector{Float64},
@@ -802,11 +801,11 @@ function second_lagrange_mult_estimate!(
     scaling::Bool,
     diag_scale::Vector{Float64})
 
-    J1 = (J*Q1)[:, 1:t]
+    J1 = (J*F_A.Q)[:, 1:t]
     b = J1' * (rx + J * p_gn)
-    v = UpperTriangular(R) \ b
-    λ[:] = P1* v
-    # λ[F.p] = v[:]
+    v = UpperTriangular(F_A.R) \ b
+    # λ[:] = F_A.P* v
+    λ[:] = v[invperm(F_A.p)]
 
     if scaling
         λ[:] = λ .* diag_scale
@@ -1052,8 +1051,10 @@ function update_working_set(
         vect_P1 = F_A.p[:]
         
         # P1, L11, Q1 = update_QR_A(Q1, F_A.R, vect_P1, s, W.t)
-        P1, L11, Q1 = update_QR_A(C.A)
-        
+        # P1, L11, Q1 = update_QR_A(C.A)
+        F_A = qr((C.A)',Val(true))
+        Q1 = F_A.Q*Matrix(I,n,n)
+        L11, P1 = Matrix(F_A.R'), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
@@ -1078,7 +1079,7 @@ function update_working_set(
             p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
 
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
-                second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
+                second_lagrange_mult_estimate!(J, F_A, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
                 s2 = check_constraint_deletion(W.q, C.A, λ, ∇fx, C.scaling, C.diag_scale, 0.0)
                 if s2 != 0
                     index_s2 = W.active[s2]
@@ -1091,7 +1092,10 @@ function update_working_set(
                     C.A = C.A[setdiff(1:end, s2), :]
                     Q1 = F_A.Q * Matrix(I, n, n)
                     vect_P1 = F_A.p[:]
-                    P1, L11, Q1 = update_QR_A(C.A)
+                    # P1, L11, Q1 = update_QR_A(C.A)
+                    F_A = qr((C.A)',Val(true))
+                    Q1 = F_A.Q*Matrix(I,n,n)
+                    L11, P1 = Matrix(F_A.R'), F_A.P
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
                     p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
@@ -1108,7 +1112,7 @@ function update_working_set(
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
 
         if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
-            second_lagrange_mult_estimate!(J, Q1, Matrix(transpose(L11)), P1, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
+            second_lagrange_mult_estimate!(J, F_A, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
             s2 = check_constraint_deletion(W.q, C.A, λ, ∇fx, C.scaling, C.diag_scale, 0.0)
             if s2 != 0
                 index_s2 = W.active[s2]
@@ -1122,8 +1126,10 @@ function update_working_set(
                 vect_P1 = F_A.p[:]
                 C.A = C.A[setdiff(1:end, s2), :]
 
-                P1, L11, Q1 = update_QR_A(C.A)
-
+                # P1, L11, Q1 = update_QR_A(C.A)
+                F_A = qr((C.A)',Val(true))
+                Q1 = F_A.Q*Matrix(I,n,n)
+                L11, P1 = Matrix(F_A.R'), F_A.P
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
                 p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
@@ -3060,7 +3066,7 @@ function enlsip(x0::Vector{Float64},
     n::Int64, m::Int64, q::Int64, l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
     ε_abs=1e-10, ε_rel=1e-5, ε_x=1e-3, ε_c=1e-4, ε_rank::Float64=1e-10,
-    verbose::Bool=false)
+    verbose::Bool=false,output_file::String="enlsip.out")
 
     function output_header(io)
         println(io, "")
@@ -3091,7 +3097,6 @@ function enlsip(x0::Vector{Float64},
         println(io, "iter     objective       cx_sum      grad_res      ||p||    dimA dimJ2   alpha     conv. speed   max weight   predicted    reduction    (working set : following lines)")
     end
 
-    output_file = "enlsip.out"
     io = open(output_file, "w")
 
     output_header_for_comparison(io)
