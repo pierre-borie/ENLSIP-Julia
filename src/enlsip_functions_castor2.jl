@@ -137,7 +137,6 @@ function evaluate_scaling!(C::Constraint)
             C.diag_scale[i] = 1.0 / row_i
         end
     end
-    # # println( "[evaluate_scaling!] diag_scale:", C.diag_scale[:])
     return
 end
 
@@ -279,9 +278,6 @@ function jac_forward_diff!(
 
         if h.ctrl >= -10
             Jh[:, j] = (hx_forward - hx) / δ_j
-
-        else
-            # println( "[jac_forward_diff] h.ctrl = ", h.ctrl)
         end
     end
     return
@@ -411,6 +407,7 @@ function sub_search_direction(
     # Solving without stabilization 
     if code == 1
         b = -transpose(P1) * cx
+        # println("[sub_search_direction] b = $b")
         p1 = LowerTriangular(L11) \ b
         d_temp = -J1 * p1 - rx
         d = F_J2.Q' * d_temp
@@ -516,6 +513,7 @@ function gn_search_direction(
     current_iter.dimJ2 = rankJ2
     current_iter.b_gn = b_gn
     current_iter.d_gn = d_gn
+    # println("[sub_search_direction] d = ", d_gn)
     return p_gn, F_J2
 
 end
@@ -692,8 +690,11 @@ function newton_search_direction(
 
     d = -W21 * p1 - transpose(J2) * rx
 
-    if isposdef(W22)
-        chol_W22 = cholesky(Symmetric(W22))
+
+    sW22 = (W22 + W22') * (1/2)
+
+    if isposdef(sW22)
+        chol_W22 = cholesky(sW22)
         y = chol_W22.L \ d
         p2 = chol_W22.U \ y
         p = Q1 * [p1; p2]
@@ -1381,6 +1382,7 @@ function check_gn_direction(
         # 6) The nonlinearity is too severe
 
         method_code = -1
+        # println("[check_gn_direction] d1nrm = $d1nrm" )
         non_linearity_k = sqrt(d1nrm * d1nrm + active_c_sum)
         non_linearity_km1 = sqrt(d1nrm_as_km1 * d1nrm_as_km1 + active_c_sum)
 
@@ -1398,17 +1400,34 @@ function check_gn_direction(
             inact_c = [cx[W.inactive[j]] for j = 1:((W.l-W.t))]
             to_reduce = (to_reduce || any(<(δ), inact_c))
         end
+        # # println("[check_gn_direction]")
+        # println("[check_gn_direction] hsum = $active_c_sum")
+        
+        # println("[check_gn_direction] to_reduce = $to_reduce")
+        # println("[check_gn_direction]  b1nrm = $b1nrm")
+        # println("[check_gn_direction] dnrm = $dnrm" )
+
         newton_previously = iter_km1.code == 2 && !constraint_deleted
         cond4 = active_c_sum > c2
 
         cond5 = (constraint_deleted || constraint_added || to_reduce || (W.t == n && W.t == rankA))
 
         ϵ = max(1e-2, 10.0 * ε_rel)
+        # println("[check_gn_direction] β_k = $β_k, ϵ * dnrm  = $(ϵ * dnrm)")
         cond6 = !((W.l == W.q) || (rankA <= W.t)) && !((β_k < ϵ * dnrm) || (b1nrm < ϵ && m == n - W.t))
-
+        # println("[check_gn_direction] cond4 :  active_c_sum > c2 : $cond4")
+        # println("[check_gn_direction] cond5 : $cond5")
+        # println("[check_gn_direction] ((β_k < ϵ * dnrm) || (b1nrm < ϵ && m == n - W.t)) = $(((β_k < ϵ * dnrm) || (b1nrm < ϵ && m == n - W.t)))")
+        # println("[check_gn_direction] cond6 : $cond6")
+        # println("[check_gn_direction] newton_previously : $newton_previously")
         if newton_previously || !(cond4 || cond5 || cond6)
+        #     println("[check_gn_direction] non_linearity_km1 = $non_linearity_km1, non_linearity_k = $non_linearity_k")
+        #     println("[check_gn_direction] iter_km1.α = $(iter_km1.α)")
             cond7 = (iter_km1.α < c5 && non_linearity_km1 < c2 * non_linearity_k) || m == n - W.t
             cond8 = !(dnrm <= c4 * β_k)
+
+            # println("[check_gn_direction] cond7 : $cond7")
+            # println("[check_gn_direction] cond8 : dnrm > c4 * β_k: $cond8")
 
             if newton_previously || cond7 || cond8
                 # Method of Newton is the only alternative
@@ -2855,7 +2874,10 @@ function check_termination_criteria(
         # Check abnormal termination criteria
         x_diff = norm(prev_iter.x - iter.x)
         Atcx_nrm = norm(transpose(active_C.A) * active_C.cx)
+        # println(["[check_termination_criteria] x_diff = $x_diff"])
+        # println("[check_termination_criteria] Atcx_nrm = $Atcx_nrm")
         active_penalty_sum = (W.t == 0 ? 0.0 : dot(iter.w[W.active[1:W.t]], iter.w[W.active[1:W.t]]))
+        # println("[check_termination_criteria] active_penalty_sum = $active_penalty_sum")
         # Criterion 9
         if nb_iter >= max_iter
             exit_code = -2
@@ -2891,7 +2913,8 @@ function output!(
 
     if norm(W.active, Inf) > 0
         s_act = "("
-        for i = 1:W.t
+        # Pour ne pas afficher trop d'indices
+        for i = 1:min(5,W.t)
             s_act = (i < W.t ? string(s_act, W.active[i], ",") : string(s_act, W.active[i], ")"))
         end
     else
@@ -2926,7 +2949,6 @@ function output_iter_for_comparison(
     iter::Iteration,
     W::WorkingSet,
     nb_iter::Int64,
-    β_prev::Float64,
     cx_sum::Float64,
     rx_sum)
 
@@ -2938,7 +2960,8 @@ function output_iter_for_comparison(
     else
         s_act = " -"
     end
-    speed = (nb_iter == 0 ? 0.0 : iter.β / β_prev)
+    speed = (nb_iter == 0 ? 0.0 : iter.speed)
+    # speed = (nb_iter == 0 ? 0.0 : iter.β / β_prev)
     to_string_e = (x -> mimic_fortran_e_format(x, 5))
     @printf(io, "%5d%15s%13s%13s%13s %3d  %3d%13s%13s%13s%13s%13s\n",
         nb_iter, mimic_fortran_e_format(rx_sum, 7),
@@ -2958,7 +2981,6 @@ function final_output_for_comparison(
     nb_iter::Int64,
     MAX_ITER::Int64,
     m::Int64,
-    q::Int64,
     weight_code::Int64,
     ε_rank, ε_abs, ε_rel, ε_x, ε_c,
     cx_sum::Float64)
@@ -3077,23 +3099,24 @@ function print_tabulated_format(
     println(io, trailer)
 end
 
-function f_var_par(x::Vector, e::Vector,t::Float64)
-    z_opt = 0.4558772 # Osborne 2
+function f_var_par(x::Vector, e::Vector,t::Float64, h::EvalFunc)
+    z_opt = 1 #471.76928152 # Chained Wood
+    m = 13
     rx = zeros(m)
-    r.ctrl = 1
-    r(x+t*e,rx,ones(1,1))
+    h.ctrl = 1
+    h(x+t*e,rx,ones(1,1))
     return dot(rx,rx)/z_opt
 end
 
-function savefig_residuals!(iter::Iteration, nb_iteration::Int64, repo::String="graphes")
+function savefig_residuals!(iter::Iteration, nb_iteration::Int64, h::EvalFunc, repo::String="graphes")
     x_test = iter.x
     dx_test = iter.p 
     α_test = iter.α
     n = length(x_test)
     Δx = [[k == i ? dx_test[i] : 0 for k =1:n] for i=1:n]
-    f = [t -> f_var_par(x_test,Δx[i],t) - 1 for i=1:n]
+    f = [t -> f_var_par(x_test,Δx[i],t, h) for i=1:n]
     τ = range(-α_test,α_test,300)
-    plot(τ,f,labels=[α_test*dx_test[1] α_test*dx_test[2] α_test*dx_test[3] α_test*dx_test[4] α_test*dx_test[5] α_test*dx_test[6] α_test*dx_test[7]])
+    plot(τ,f,labels=[α_test*dx_test[1] α_test*dx_test[2] α_test*dx_test[3] α_test*dx_test[4] α_test*dx_test[5] α_test*dx_test[6] α_test*dx_test[7]],legend=:none)
     ind = @sprintf "%.3d" (nb_iteration-1)
     name_fig = string(repo,"/graphe_iter_$(ind).png")
     savefig(name_fig)
@@ -3165,8 +3188,8 @@ function enlsip(x0::Vector{Float64},
     r::ResidualsEval, c::ConstraintsEval,
     n::Int64, m::Int64, q::Int64, l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
-    ε_abs=1e-10, ε_rel=1e-5, ε_x=1e-3, ε_c=1e-4,
-    ε_rank::Float64=1e-10)
+    ε_abs=1e-10, ε_rel=1e-5, ε_x=1e-3, ε_c=1e-4, ε_rank::Float64=1e-10,
+    verbose::Bool=false)
 
     function output_header(io)
         println(io, "")
@@ -3197,15 +3220,15 @@ function enlsip(x0::Vector{Float64},
         println(io, "iter     objective       cx_sum      grad_res      ||p||    dimA dimJ2   alpha     conv. speed   max weight   predicted    reduction    (working set : following lines)")
     end
 
-    output_file = "output.txt"
+    output_file = "enlsip.out"
     df_iterates = DataFrame(iter=Int[], α=Float64[], x=Vector{Float64}[]) 
     io = open(output_file, "w")
 
-    output_header(io)
+    output_header_for_comparison(io)
 
     nb_iteration = 0
     nb_eval = 0
-
+    # MAX_ITER = 1
     # Double relative precision
     ε_float = eps(Float64)
     # Vector of penalty constants
@@ -3261,10 +3284,12 @@ function enlsip(x0::Vector{Float64},
     nrm_b1 = norm(first_iter.b_gn[1:first_iter.dimA])
     nrm_d1 = norm(first_iter.d_gn[1:first_iter.dimJ2])
     nrm_d = norm(first_iter.d_gn)
+    # @show first_iter.dimJ2
+    # println("||d1|| = $nrm_d1")
 
     # Analys of the lastly computed search direction
     error_code = search_direction_analys(previous_iter, first_iter, nb_iteration, x0, c, r, rx, cx, active_C.cx, first_iter.λ, rx_sum, active_cx_sum, p_gn, first_iter.d_gn, first_iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, first_iter.rankA, first_iter.rankJ2, P1, Q1, L11, F_L11, F_J2, first_iter.add, first_iter.del, active_C.scaling, active_C.diag_scale)
-
+    # println("[enlsip] après search_direction_analys : code = $(first_iter.code)")
     # Computation of penalty constants and steplentgh
     α, w, Ψ_error = compute_steplength(first_iter, x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
     first_iter.α = α
@@ -3289,7 +3314,7 @@ function enlsip(x0::Vector{Float64},
         ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c, error_code, sigmin, λ_abs_max, Ψ_error)
 
     # Print collected informations about the first iteration
-    output!(io, first_iter, working_set, nb_iteration, f_opt, active_cx_sum)
+    output_iter_for_comparison(io, first_iter, working_set, nb_iteration, active_cx_sum, f_opt)
     flush(io)
 
     # Check for violated constraints and add it to the working set
@@ -3318,7 +3343,7 @@ function enlsip(x0::Vector{Float64},
  
         # Graphe de l'évolution des rédisus le long de la direction de recherche
         push!(df_iterates, (nb_iteration, previous_iter.α, previous_iter.x))
-        #savefig_residuals!(previous_iter,nb_iteration)
+        # savefig_residuals!(previous_iter,nb_iteration,c)
 
         # println(io_sd, "$nb_iteration $(previous_iter.x) $(previous_iter.p) $(previous_iter.α)")
         # println( "\nIter $nb_iteration\n")
@@ -3332,11 +3357,12 @@ function enlsip(x0::Vector{Float64},
         J2 = (J*Q1)[:, iter.rankA+1:end]
         nrm_b1 = norm(iter.b_gn[1:iter.dimA])
         nrm_d1 = norm(iter.d_gn[1:iter.dimJ2])
+        # println("||d1|| = $nrm_d1")
         nrm_d = norm(iter.d_gn)
 
         # Analys of the lastly computed search direction
         error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, iter.rankA, iter.rankJ2, P1, Q1, L11, F_L11, F_J2, iter.add, iter.del, active_C.scaling, active_C.diag_scale, iter.restart)
-
+        # println("[enlsip] après search_direction_analys : code = $(iter.code)")
         # Computation of penalty constants and steplentgh
         α, w, Ψ_error = compute_steplength(iter, x, r, rx, J, iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, iter.dimA, m, iter.index_del, previous_iter.α, previous_iter.rankJ2, iter.rankJ2, iter.code, weight_code)
         iter.α = α
@@ -3366,7 +3392,7 @@ function enlsip(x0::Vector{Float64},
         # Another step is required
         if (exit_code == 0)
             # Print collected informations about current iteration
-            output!(io, iter, working_set, nb_iteration, f_opt, active_cx_sum)
+            output_iter_for_comparison(io, iter, working_set, nb_iteration, active_cx_sum, f_opt)
 
             # Check for violated constraints and add it to the working set
 
@@ -3390,8 +3416,9 @@ function enlsip(x0::Vector{Float64},
         else
             # Algorithm has terminated
             x_opt = x
-            f_opt = dot(rx, rx)
-            final_output!(io, iter, working_set, exit_code, nb_iteration)
+            f_opt = dot(rx,rx)
+            # final_output!(io, iter, working_set, exit_code, nb_iteration)
+            final_output_for_comparison(io, iter, working_set, exit_code, nb_iteration, MAX_ITER, m, weight_code, ε_rank, ε_abs, ε_rel, ε_x, ε_c, active_cx_sum)
             CSV.write("iterates.csv", df_iterates, delim=";")
         end
         flush(io)
@@ -3399,10 +3426,10 @@ function enlsip(x0::Vector{Float64},
 
     # Close the IO Stream and print some collected informations
     close(io)
-    for s in readlines(output_file)
-        println(s)
-    end
-    rm(output_file)
-    # return ENLSIP(exit_code, x_opt, f_opt), df_iterates
+    verbose && (s -> println(s)).(readlines(output_file))
+    # for s in readlines(output_file)
+    #     println(s)
+    # end
+    # rm(output_file)
     return ENLSIP(exit_code, x_opt, f_opt)
 end
