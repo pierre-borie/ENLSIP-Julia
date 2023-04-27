@@ -391,9 +391,7 @@ function sub_search_direction(
     J1::Matrix{Float64},
     rx::Vector{Float64},
     cx::Vector{Float64},
-    Q1::Matrix,
-    L11::Matrix,
-    P1::Matrix,
+    F_A::Factorization,
     F_L11::Factorization,
     F_J2::Factorization,
     n::Int64,
@@ -405,8 +403,9 @@ function sub_search_direction(
 
     # Solving without stabilization 
     if code == 1
-        b = -transpose(P1) * cx
-        p1 = LowerTriangular(L11) \ b
+        # b = -transpose(P1) * cx[F_A.p]
+        b = -cx[F_A.p]
+        p1 = LowerTriangular(F_A.R') \ b
         d_temp = -J1 * p1 - rx
         d = F_J2.Q' * d_temp
         δp2 = UpperTriangular(F_J2.R[1:dimJ2, 1:dimJ2]) \ d[1:dimJ2]
@@ -414,8 +413,9 @@ function sub_search_direction(
         p2 = [δp2; zeros(n - t - dimJ2)][invperm(F_J2.p)]
         # Solving with stabilization
     elseif code == -1
-        b_temp = -transpose(P1) * cx
-        b = F_L11.Q' * b_temp
+        # b_temp = -transpose(P1) * cx
+        # b = -F_L11.Q' * b_temp
+        b = -F_L11.Q' * cx[F_A.p]
         δp1 = UpperTriangular(F_L11.R[1:dimA, 1:dimA]) \ b[1:dimA]
         p1 = F_L11.P[1:rankA, 1:rankA] * [δp1; zeros(rankA - dimA)]
         d_temp = -J1 * p1 - rx
@@ -425,7 +425,7 @@ function sub_search_direction(
         p2 = [δp2; zeros(n - rankA - dimJ2)][invperm(F_J2.p)]
     end
 
-    p = Q1 * [p1; p2]
+    p = F_A.Q * [p1; p2]
     return p, b, d
 end
 
@@ -484,9 +484,7 @@ function gn_search_direction(
     J::Matrix{Float64},
     rx::Vector{Float64},
     cx::Vector{Float64},
-    Q1::Matrix,
-    L11::Matrix,
-    P1::Matrix,
+    F_A::Factorization,
     F_L11::Factorization,
     rankA::Int64,
     t::Int64,
@@ -495,13 +493,13 @@ function gn_search_direction(
 
     code = (rankA == t ? 1 : -1)
     (m, n) = size(J)
-    JQ1 = J * Q1
+    JQ1 = J * F_A.Q
     J1, J2 = JQ1[:, 1:rankA], JQ1[:, rankA+1:end]
     
 
     F_J2 = qr(J2, Val(true))
     rankJ2 = pseudo_rank(diag(F_J2.R), ε_rank)
-    p_gn, b_gn, d_gn = sub_search_direction(J1, rx, cx, Q1, L11, P1, F_L11, F_J2, n, t, rankA, rankA, rankJ2, code)
+    p_gn, b_gn, d_gn = sub_search_direction(J1, rx, cx, F_A, F_L11, F_J2, n, t, rankA, rankA, rankJ2, code)
     current_iter.rankA = rankA
     current_iter.rankJ2 = rankJ2
     current_iter.dimA = rankA
@@ -634,9 +632,7 @@ function newton_search_direction(
     λ::Vector{Float64},
     rx::Vector{Float64},
     J::Matrix{Float64},
-    Q1::Matrix{Float64},
-    P1::Matrix{Float64},
-    L11::Matrix{Float64},
+    F_A::Factorization,
     F_L11::Factorization,
     rankA::Int64)
 
@@ -644,11 +640,13 @@ function newton_search_direction(
     error = false
 
     if t == rankA
-        b = -P1' * active_cx
-        p1 = LowerTriangular(L11) \ b
+        # b = -P1' * active_cx
+        b = -active_cx[F_A.p]
+        p1 = LowerTriangular(F_A.R') \ b
     elseif t > rankA
-        b_temp = -transpose(P1) * active_cx
-        b = F_L11.Q' * b_temp
+        # b_temp = -transpose(P1) * active_cx
+        # b = -F_L11.Q'* b_temp
+        b = -F_L11.Q' * active_cx[F_A.p]
         δp1 = UpperTriangular(F_L11.R[1:rankA, 1:rankA]) \ b[1:rankA]
         p1 = F_L11.P[1:rankA, 1:rankA] * δp1
     end
@@ -657,7 +655,7 @@ function newton_search_direction(
     end
 
     # Computation of J1, J2
-    JQ1 = J * Q1
+    JQ1 = J * F_A.Q
     J1, J2 = JQ1[:, 1:rankA], JQ1[:, rankA+1:end]
 
     # Computation of hessian matrices
@@ -669,9 +667,10 @@ function newton_search_direction(
     Γ_mat = r_mat - c_mat
 
     if rankA == t
-        E = Q1' * Γ_mat * Q1
+        E = F_A.Q' * Γ_mat * F_A.Q
     elseif t > rankA
-        Q1P2 = Q1 * F_L11.P
+        # Q1P2 = F_A.Q*P2
+        Q1P2 = F_A.Q[:,F_L11.p]
         E = Q1P2' * Γ_mat * Q1P2
     end
 
@@ -691,7 +690,7 @@ function newton_search_direction(
         chol_W22 = cholesky(sW22)
         y = chol_W22.L \ d
         p2 = chol_W22.U \ y
-        p = Q1 * [p1; p2]
+        p = F_A.Q * [p1; p2]
     else
         p = zeros(n)
         error = true
@@ -1057,7 +1056,7 @@ function update_working_set(
         L11, P1 = Matrix(F_A.R'), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
-        p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
+        p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
 
         # Test for feasible direction
         As_p = (rankA <= W.t ? 0.0 : dot(A_s, p_gn))
@@ -1076,7 +1075,7 @@ function update_working_set(
             L11, P1 = Matrix(transpose(F_A.R)), F_A.P
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
-            p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
+            p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
 
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
                 second_lagrange_mult_estimate!(J, F_A, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
@@ -1098,7 +1097,7 @@ function update_working_set(
                     L11, P1 = Matrix(F_A.R'), F_A.P
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
-                    p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
+                    p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
                 end
             end
         end
@@ -1109,7 +1108,7 @@ function update_working_set(
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
 
-        p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
+        p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
 
         if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
             second_lagrange_mult_estimate!(J, F_A, λ, rx, p_gn, W.t, C.scaling, C.diag_scale)
@@ -1132,12 +1131,12 @@ function update_working_set(
                 L11, P1 = Matrix(F_A.R'), F_A.P
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
-                p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, Q1, L11, P1, F_L11, rankA, W.t, ε_rank, iter_k)
+                p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
             end
         end
     end
     iter_k.λ = λ
-    return P1, L11, Q1, F_L11, F_J2
+    return P1, L11, Q1, F_A, F_L11, F_J2
 end
 
 """
@@ -1552,14 +1551,10 @@ function search_direction_analys(
     nrm_d1_gn::Float64,
     nrm_d_gn::Float64,
     J::Matrix{Float64},
-    m::Int64,
-    n::Int64,
     working_set::WorkingSet,
     rankA::Int64,
     rankJ2::Int64,
-    P1::Matrix{Float64},
-    Q1::Matrix{Float64},
-    L11::Matrix{Float64},
+    F_A::Factorization,
     F_L11::Factorization,
     F_J2::Factorization,
     constraint_added::Bool,
@@ -1568,7 +1563,7 @@ function search_direction_analys(
     diag_scale::Vector{Float64},
     restart::Bool=false)
 
-
+    (m,n) = size(J)
     prev_dimJ2m1 = previous_iter.dimJ2 + previous_iter.t - working_set.t - 1
     nrm_d1_asprev = norm(d_gn[1:prev_dimJ2m1])
     error_code = 0
@@ -1583,19 +1578,20 @@ function search_direction_analys(
         # Subspace minimization to recompute the search direction
         # using dimA columns of matrix R11 and dimJ2 columns of matrix R22
     elseif method_code == -1
-        JQ1 = J * Q1
+        JQ1 = J * F_A.Q
         J1, J2 = JQ1[:, 1:rankA], JQ1[:, rankA+1:end]
-        b_temp = -transpose(P1) * active_cx
-        b = F_L11.Q' * b_temp
+        # b_temp = -transpose(P1) * active_cx
+        # b = F_L11.Q' * b_temp
+        b = -F_L11.Q' * active_cx[F_A.p]
         dimA, dimJ2 = choose_subspace_dimensions(rx_sum, rx, active_cx_sum, J1, working_set.t, rankJ2, rankA, b, F_L11, F_J2, previous_iter, restart)
-        p, b, d = sub_search_direction(J1, rx, active_cx, Q1, L11, P1, F_L11, F_J2, n, working_set.t, rankA, dimA, dimJ2, method_code)
+        p, b, d = sub_search_direction(J1, rx, active_cx, F_A, F_L11, F_J2, n, working_set.t, rankA, dimA, dimJ2, method_code)
         if dimA == rankA && dimJ2 == rankJ2
             method_code = 1
         end
 
         # Search direction computed with the method of Newton
     elseif method_code == 2
-        p, newton_error = newton_search_direction(x, c, r, active_cx, working_set.active, n, m, working_set.l, working_set.t, λ, rx, J, Q1, P1, L11, F_L11, rankA)
+        p, newton_error = newton_search_direction(x, c, r, active_cx, working_set.active, n, m, working_set.l, working_set.t, λ, rx, J, F_A, F_L11, rankA)
         b, d = b_gn, d_gn
         dimA = -working_set.t
         dimJ2 = working_set.t - n
@@ -3002,7 +2998,7 @@ end
 
 ##### ENLSIP 0.4.0 #####
 
-mutable struct ENLSIP
+struct EnslipSolution
     exit_code::Int64
     sol::Vector
     obj_value::Float64
@@ -3145,7 +3141,7 @@ function enlsip(x0::Vector{Float64},
     evaluate_scaling!(active_C)
 
 
-    P1, L11, Q1, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter, ε_rank)
+    P1, L11, Q1, F_A, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter, ε_rank)
  
     rx_sum = dot(rx, rx)
     active_cx_sum = dot(cx[working_set.active[1:working_set.t]], cx[working_set.active[1:working_set.t]])
@@ -3157,7 +3153,7 @@ function enlsip(x0::Vector{Float64},
     nrm_d = norm(first_iter.d_gn)
 
     # Analys of the lastly computed search direction
-    error_code = search_direction_analys(previous_iter, first_iter, nb_iteration, x0, c, r, rx, cx, active_C.cx, first_iter.λ, rx_sum, active_cx_sum, p_gn, first_iter.d_gn, first_iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, first_iter.rankA, first_iter.rankJ2, P1, Q1, L11, F_L11, F_J2, first_iter.add, first_iter.del, active_C.scaling, active_C.diag_scale)
+    error_code = search_direction_analys(previous_iter, first_iter, nb_iteration, x0, c, r, rx, cx, active_C.cx, first_iter.λ, rx_sum, active_cx_sum, p_gn, first_iter.d_gn, first_iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, working_set, first_iter.rankA, first_iter.rankJ2, F_A, F_L11, F_J2, first_iter.add, first_iter.del, active_C.scaling, active_C.diag_scale)
  
     # Computation of penalty constants and steplentgh
     α, w, Ψ_error = compute_steplength(first_iter, x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
@@ -3184,7 +3180,6 @@ function enlsip(x0::Vector{Float64},
 
     # Print collected informations about the first iteration
     output_iter_for_comparison(io, first_iter, working_set, nb_iteration, active_cx_sum, f_opt)
-    flush(io)
 
     # Check for violated constraints and add it to the working set
     first_iter.add = evaluate_violated_constraints(cx, working_set, first_iter.index_α_upp)
@@ -3215,7 +3210,7 @@ function enlsip(x0::Vector{Float64},
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
         evaluate_scaling!(active_C)
-        P1, L11, Q1, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter, ε_rank)
+        P1, L11, Q1, F_A, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter, ε_rank)
         active_cx_sum = dot(cx[working_set.active[1:working_set.t]], cx[working_set.active[1:working_set.t]])
         iter.t = working_set.t
         J2 = (J*Q1)[:, iter.rankA+1:end]
@@ -3224,7 +3219,7 @@ function enlsip(x0::Vector{Float64},
         nrm_d = norm(iter.d_gn)
 
         # Analys of the lastly computed search direction
-        error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, m, n, working_set, iter.rankA, iter.rankJ2, P1, Q1, L11, F_L11, F_J2, iter.add, iter.del, active_C.scaling, active_C.diag_scale, iter.restart)
+        error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, working_set, iter.rankA, iter.rankJ2, F_A, F_L11, F_J2, iter.add, iter.del, active_C.scaling, active_C.diag_scale, iter.restart)
         # Computation of penalty constants and steplentgh
         α, w, Ψ_error = compute_steplength(iter, x, r, rx, J, iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, iter.dimA, m, iter.index_del, previous_iter.α, previous_iter.rankJ2, iter.rankJ2, iter.code, weight_code)
         iter.α = α
@@ -3280,12 +3275,11 @@ function enlsip(x0::Vector{Float64},
             f_opt = dot(rx,rx)
             final_output_for_comparison(io, iter, working_set, exit_code, nb_iteration, MAX_ITER, m, weight_code, ε_rank, ε_abs, ε_rel, ε_x, ε_c, active_cx_sum)
         end
-        flush(io)
     end
 
     # Close the IO Stream and print some collected informations
     close(io)
     verbose && (s -> println(s)).(readlines(output_file))
 
-    return ENLSIP(exit_code, x_opt, f_opt)
+    return EnslipSolution(exit_code, x_opt, f_opt)
 end
