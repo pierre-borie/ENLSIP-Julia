@@ -403,25 +403,21 @@ function sub_search_direction(
 
     # Solving without stabilization 
     if code == 1
-        # b = -transpose(P1) * cx[F_A.p]
         b = -cx[F_A.p]
         p1 = LowerTriangular(F_A.R') \ b
         d_temp = -J1 * p1 - rx
         d = F_J2.Q' * d_temp
         δp2 = UpperTriangular(F_J2.R[1:dimJ2, 1:dimJ2]) \ d[1:dimJ2]
-        # p2 = F_J2.P * [δp2; zeros(n - t - dimJ2)]
         p2 = [δp2; zeros(n - t - dimJ2)][invperm(F_J2.p)]
-        # Solving with stabilization
+
+    # Solving with stabilization
     elseif code == -1
-        # b_temp = -transpose(P1) * cx
-        # b = -F_L11.Q' * b_temp
         b = -F_L11.Q' * cx[F_A.p]
         δp1 = UpperTriangular(F_L11.R[1:dimA, 1:dimA]) \ b[1:dimA]
         p1 = F_L11.P[1:rankA, 1:rankA] * [δp1; zeros(rankA - dimA)]
         d_temp = -J1 * p1 - rx
         d = F_J2.Q' * d_temp
         δp2 = UpperTriangular(F_J2.R[1:dimJ2, 1:dimJ2]) \ d[1:dimJ2]
-        # p2 = F_J2.P * [δp2; zeros(n - rankA - dimJ2)]
         p2 = [δp2; zeros(n - rankA - dimJ2)][invperm(F_J2.p)]
     end
 
@@ -624,11 +620,7 @@ function newton_search_direction(
     c::ConstraintsEval,
     r::ResidualsEval,
     active_cx::Vector{Float64},
-    active::Vector{Int64},
-    n::Int64,
-    m::Int64,
-    l::Int64,
-    t::Int64,
+    working_set::WorkingSet,
     λ::Vector{Float64},
     rx::Vector{Float64},
     J::Matrix{Float64},
@@ -639,13 +631,17 @@ function newton_search_direction(
 
     error = false
 
+    # Data
+    (m,n) = size(J)
+    t = size(active_cx)
+    active = working_set.active
+    t, l = working_set.t, working_set.l
+
+    # Computation of p1, first component of the search direction
     if t == rankA
-        # b = -P1' * active_cx
         b = -active_cx[F_A.p]
         p1 = LowerTriangular(F_A.R') \ b
     elseif t > rankA
-        # b_temp = -transpose(P1) * active_cx
-        # b = -F_L11.Q'* b_temp
         b = -F_L11.Q' * active_cx[F_A.p]
         δp1 = UpperTriangular(F_L11.R[1:rankA, 1:rankA]) \ b[1:rankA]
         p1 = F_L11.P[1:rankA, 1:rankA] * δp1
@@ -666,12 +662,10 @@ function newton_search_direction(
 
     Γ_mat = r_mat - c_mat
 
-    if rankA == t
-        E = F_A.Q' * Γ_mat * F_A.Q
-    elseif t > rankA
-        # Q1P2 = F_A.Q*P2
-        Q1P2 = F_A.Q[:,F_L11.p]
-        E = Q1P2' * Γ_mat * Q1P2
+    E = F_A.Q' * Γ_mat * F_A.Q
+    if t > rankA
+        vect_P2 = F_L11.p
+        E = E[vect_P2,vect_P2]
     end
 
     # Forms the system to compute p2
@@ -757,7 +751,6 @@ function first_lagrange_mult_estimate!(
     if prankA < t
         v[prankA+1:t] = zeros(t - prankA)
     end
-    # λ_ls = F.P * v
     λ_ls = v[inv_p]
 
     # Compute norm of residual
@@ -767,7 +760,6 @@ function first_lagrange_mult_estimate!(
     #                  -1
     # λ = λ_ls - (A*A^T) *cx
 
-    # b = -transpose(F.P) * cx
     b = -cx[F.p]
     y = zeros(t)
     #                -1
@@ -777,7 +769,6 @@ function first_lagrange_mult_estimate!(
     # Compute u = R  * y
     u = zeros(t)
     u[1:prankA] = UpperTriangular(F.R[1:prankA, 1:prankA]) \ y[1:prankA]
-    # λ[:] = λ_ls + F.P * u
     λ[:] = λ_ls + u[inv_p]
     # Back transform due to row scaling of matrix A
     if scaling_done
@@ -803,7 +794,6 @@ function second_lagrange_mult_estimate!(
     J1 = (J*F_A.Q)[:, 1:t]
     b = J1' * (rx + J * p_gn)
     v = UpperTriangular(F_A.R) \ b
-    # λ[:] = F_A.P* v
     λ[:] = v[invperm(F_A.p)]
 
     if scaling
@@ -816,9 +806,14 @@ end
 
 function minmax_lagrangian_mult(
     λ::Vector{Float64},
-    q::Int64, t::Int64,
-    scaling::Bool, diag_scale::Vector{Float64})
+    working_set::WorkingSet,
+    active_C::Constraint)
     
+    # Data
+
+    q,t = working_set.q, working_set.t
+    scaling = active_C.scaling
+    diag_scale = active_C.diag_scale
     sq_rel = sqrt(eps(Float64))
     λ_abs_max = 0.0
     sigmin = 1e6
@@ -1046,13 +1041,9 @@ function update_working_set(
         iter_k.del = true
         iter_k.index_del = index_s
         C.A = C.A[setdiff(1:end, s), :]
-        Q1 = F_A.Q * Matrix(I, n, n)
         vect_P1 = F_A.p[:]
         
-        # P1, L11, Q1 = update_QR_A(Q1, F_A.R, vect_P1, s, W.t)
-        # P1, L11, Q1 = update_QR_A(C.A)
         F_A = qr((C.A)',Val(true))
-        Q1 = F_A.Q*Matrix(I,n,n)
         L11, P1 = Matrix(F_A.R'), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
@@ -1071,7 +1062,6 @@ function update_working_set(
             iter_k.index_del = 0
             iter_k.del = false
             C.A = (C.scaling ? A[W.active[1:W.t], :] .* C.diag_scale : A[W.active[1:W.t], :])
-            Q1 = F_A.Q * Matrix(I, n, n)
             L11, P1 = Matrix(transpose(F_A.R)), F_A.P
             rankA = pseudo_rank(diag(L11), ε_rank)
             F_L11 = qr(L11, Val(true))
@@ -1089,11 +1079,8 @@ function update_working_set(
                     iter_k.del = true
                     iter_k.index_del = index_s2
                     C.A = C.A[setdiff(1:end, s2), :]
-                    Q1 = F_A.Q * Matrix(I, n, n)
                     vect_P1 = F_A.p[:]
-                    # P1, L11, Q1 = update_QR_A(C.A)
                     F_A = qr((C.A)',Val(true))
-                    Q1 = F_A.Q*Matrix(I,n,n)
                     L11, P1 = Matrix(F_A.R'), F_A.P
                     rankA = pseudo_rank(diag(L11), ε_rank)
                     F_L11 = qr(L11, Val(true))
@@ -1103,7 +1090,6 @@ function update_working_set(
         end
         # No first order estimate implies deletion of a constraint
     elseif s == 0
-        Q1 = F_A.Q * Matrix(I, n, n)
         L11, P1 = Matrix(F_A.R'), F_A.P
         rankA = pseudo_rank(diag(L11), ε_rank)
         F_L11 = qr(L11, Val(true))
@@ -1121,13 +1107,10 @@ function update_working_set(
                 delete_constraint!(W, s2)
                 iter_k.del = true
                 iter_k.index_del = index_s2
-                Q1 = F_A.Q * Matrix(I, n, n)
                 vect_P1 = F_A.p[:]
                 C.A = C.A[setdiff(1:end, s2), :]
 
-                # P1, L11, Q1 = update_QR_A(C.A)
                 F_A = qr((C.A)',Val(true))
-                Q1 = F_A.Q*Matrix(I,n,n)
                 L11, P1 = Matrix(F_A.R'), F_A.P
                 rankA = pseudo_rank(diag(L11), ε_rank)
                 F_L11 = qr(L11, Val(true))
@@ -1136,7 +1119,7 @@ function update_working_set(
         end
     end
     iter_k.λ = λ
-    return P1, L11, Q1, F_A, F_L11, F_J2
+    return F_A, F_L11, F_J2
 end
 
 """
@@ -1540,35 +1523,45 @@ function search_direction_analys(
     r::ResidualsEval,
     rx::Vector{Float64},
     cx::Vector{Float64},
-    active_cx::Vector{Float64},
-    λ::Vector{Float64},
-    rx_sum::Float64,
+    active_C::Constraint,
     active_cx_sum::Float64,
     p_gn::Vector{Float64},
-    d_gn::Vector{Float64},
-    b_gn::Vector{Float64},
-    nrm_b1_gn::Float64,
-    nrm_d1_gn::Float64,
-    nrm_d_gn::Float64,
     J::Matrix{Float64},
     working_set::WorkingSet,
-    rankA::Int64,
-    rankJ2::Int64,
     F_A::Factorization,
     F_L11::Factorization,
-    F_J2::Factorization,
-    constraint_added::Bool,
-    constraint_deleted::Bool,
-    scaling::Bool,
-    diag_scale::Vector{Float64},
-    restart::Bool=false)
+    F_J2::Factorization)
 
+    # Data
     (m,n) = size(J)
+
+    rx_sum = dot(rx,rx)
+    active_cx = active_C.cx
+    scaling = active_C.scaling
+    diag_scale = 
+    λ = current_iter.λ
+    constraint_added = current_iter.add
+    constraint_deleted = current_iter.del
+
+    b_gn = current_iter.b_gn
+    nrm_b1_gn = norm(b_gn[1:current_iter.dimA])
+    rankA = current_iter.rankA 
+    
+    
+    d_gn = current_iter.d_gn
+    nrm_d_gn = norm(current_iter.d_gn)
+    nrm_d1_gn = norm(d_gn[1:current_iter.dimJ2])
+    rankJ2 = current_iter.rankJ2
     prev_dimJ2m1 = previous_iter.dimJ2 + previous_iter.t - working_set.t - 1
     nrm_d1_asprev = norm(d_gn[1:prev_dimJ2m1])
+    
+    restart = current_iter.restart
+
+    #Analys of search direction computed with Gauss-Newton method
     error_code = 0
     method_code, β = check_gn_direction(nrm_b1_gn, nrm_d1_gn, nrm_d1_asprev, nrm_d_gn, active_cx_sum, iter_number, rankA, n, m, restart, constraint_added, constraint_deleted, working_set, cx, λ,
         previous_iter, scaling, diag_scale)
+    
     # Gauss-Newton accepted
     if method_code == 1
         dimA = rankA
@@ -1579,9 +1572,7 @@ function search_direction_analys(
         # using dimA columns of matrix R11 and dimJ2 columns of matrix R22
     elseif method_code == -1
         JQ1 = J * F_A.Q
-        J1, J2 = JQ1[:, 1:rankA], JQ1[:, rankA+1:end]
-        # b_temp = -transpose(P1) * active_cx
-        # b = F_L11.Q' * b_temp
+        J1 = JQ1[:, 1:rankA]
         b = -F_L11.Q' * active_cx[F_A.p]
         dimA, dimJ2 = choose_subspace_dimensions(rx_sum, rx, active_cx_sum, J1, working_set.t, rankJ2, rankA, b, F_L11, F_J2, previous_iter, restart)
         p, b, d = sub_search_direction(J1, rx, active_cx, F_A, F_L11, F_J2, n, working_set.t, rankA, dimA, dimJ2, method_code)
@@ -1591,7 +1582,7 @@ function search_direction_analys(
 
         # Search direction computed with the method of Newton
     elseif method_code == 2
-        p, newton_error = newton_search_direction(x, c, r, active_cx, working_set.active, n, m, working_set.l, working_set.t, λ, rx, J, F_A, F_L11, rankA)
+        p, newton_error = newton_search_direction(x, c, r, active_cx, working_set, λ, rx, J, F_A, F_L11, rankA)
         b, d = b_gn, d_gn
         dimA = -working_set.t
         dimJ2 = working_set.t - n
@@ -1867,13 +1858,14 @@ function penalty_weight_update(
     K::Array{Array{Float64,1},1},
     rx::Vector{Float64},
     cx::Vector{Float64},
-    active::Vector{Int64},
-    t::Int64,
+    work_set::WorkingSet,
     dimA::Int64,
     norm_code::Int64)
+
     # Data
     δ = 0.25
-
+    active = work_set.active
+    t = work_set.t
 
 
     nrm_Ap = sqrt(dot(Ap, Ap))
@@ -2261,15 +2253,17 @@ function linesearch_constrained(
     cx::Vector{Float64},
     JpAp::Vector{Float64},
     w::Vector{Float64},
-    m::Int64,
-    l::Int64,
-    t::Int64,
-    active::Vector{Int64},
-    inactive::Vector{Int64},
+    work_set::WorkingSet,
     ψ0::Float64,
     dψ0::Float64,
     α_low::Float64,
     α_upp::Float64)
+
+
+    # Data
+    m = size(rx)
+    l, t = work_set.l, work_set.t
+    active, inactive = work_set.active, work_set.inactive
 
     # Only evalutations for residuals and constraints
     r.ctrl = 1
@@ -2455,11 +2449,13 @@ function upper_bound_steplength(
     A::Matrix{Float64},
     cx::Vector{Float64},
     p::Vector{Float64},
-    inactive::Vector{Int64},
-    t::Int64,
-    l::Int64,
-    index_del::Int64
-)
+    work_set::WorkingSet,
+    index_del::Int64)
+
+    # Data
+    inactive = work_set.inactive
+    t = work_set.t
+    l = work_set.l
 
     α_upper = Inf
     index_α_upp = 0
@@ -2498,43 +2494,47 @@ If search direction computed with method of Newton, an undamped step is taken, i
 """
 function compute_steplength(
     iter::Iteration,
+    previous_iter::Iteration,
     x::Vector{Float64},
     r::ResidualsEval,
     rx::Vector{Float64},
     J::Matrix{Float64},
-    p::Vector{Float64},
     c::ConstraintsEval,
     cx::Vector{Float64},
     A::Matrix{Float64},
     active_constraint::Constraint,
-    w_old::Vector{Float64},
     work_set::WorkingSet,
     K::Array{Array{Float64,1},1},
-    dimA::Int64,
-    m::Int64,
-    ind_constraint_del::Int64,
-    previous_α::Float64,
-    prev_rankJ2::Int64,
-    rankJ2::Int64,
-    method_code::Int64,
     weight_code::Int64)
 
     # Data
-    Ψ_error = 0
     c1 = 1e-3
-    rx_sum = dot(rx, rx)
 
+    (m,_) = size(J)
+    p = iter.p
+    dimA = iter.dimA
+    rankJ2 = iter.rankJ2
+    method_code = iter.code
+    ind_constraint_del = iter.index_del
+    
+    previous_α = previous_iter.α
+    prev_rankJ2  = previous_iter.rankJ2
+    w_old = previous_iter.w
+    
     Jp = J * p
     Ap = A * p
     JpAp = vcat(Jp, Ap)
     active_Ap = (active_constraint.A) * p
+    active_index = work_set.active[1:work_set.t]
     if active_constraint.scaling
         active_Ap = active_Ap ./ active_constraint.diag_scale
     end
-    active_index = work_set.active[1:work_set.t]
+    
+
+    Ψ_error = 0
     if method_code != 2
         # Compute penalty weights and derivative of ψ at α = 0
-        w, dψ0 = penalty_weight_update(w_old, Jp, active_Ap, K, rx, cx, work_set.active, work_set.t, dimA, weight_code)
+        w, dψ0 = penalty_weight_update(w_old, Jp, active_Ap, K, rx, cx, work_set, dimA, weight_code)
 
         #
         # Compute ψ(0) = 0.5 * [||r(x)||^2 +    Σ     (w_i*c_i(x)^2)]
@@ -2548,7 +2548,7 @@ function compute_steplength(
         else
 
             # Determine upper bound of the steplength
-            α_upp, index_α_upp = upper_bound_steplength(A, cx, p, work_set.inactive, work_set.t, work_set.l, ind_constraint_del)
+            α_upp, index_α_upp = upper_bound_steplength(A, cx, p, work_set, ind_constraint_del)
             α_low = α_upp / 3000.0
 
             # Determine a first guess of the steplength
@@ -2556,10 +2556,10 @@ function compute_steplength(
             α0 = min(1.0, magfy * previous_α, α_upp)
             # Compute the steplength
             
-            α, gac_error = linesearch_constrained(x, α0, p, r, c, rx, cx, JpAp, w, m, work_set.l, work_set.t, work_set.active, work_set.inactive, ψ0, dψ0, α_low, α_upp)
+            α, gac_error = linesearch_constrained(x, α0, p, r, c, rx, cx, JpAp, w, work_set, ψ0, dψ0, α_low, α_upp)
             if gac_error 
                 ψ_k = psi(x,α,p,r,c,w,m,work_set.l,work_set.t,work_set.active,work_set.inactive)
-                Ψ_error = check_derivatives(dψ0,ψ0,ψ_k,x,α,p,r,c,w,m,work_set.l,work_set.t,work_set.active,work_set.inactive)
+                Ψ_error = check_derivatives(dψ0,ψ0,ψ_k,x,α,p,r,c,w,work_set,m)
             end
 
             # Compute the predicted linear progress and actual progress
@@ -2602,11 +2602,12 @@ function check_derivatives(
     r::ResidualsEval,
     c::ConstraintsEval,
     w::Vector{Float64},
-    m::Int64,
-    l::Int64,
-    t::Int64,
-    active::Vector{Int64},
-    inactive::Vector{Int64})
+    work_set::WorkingSet,
+    m::Int64)
+
+    # Data
+    l,t = work_set.l, work_set.t
+    active, inactive = work_set.active,work_set.inactive
 
     ctrl = -1
     ψ_mα = psi(x_old,-α,p,r,c,w,m,l,t,active,inactive)
@@ -3141,22 +3142,19 @@ function enlsip(x0::Vector{Float64},
     evaluate_scaling!(active_C)
 
 
-    P1, L11, Q1, F_A, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter, ε_rank)
+    F_A, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, first_iter, ε_rank)
  
     rx_sum = dot(rx, rx)
     active_cx_sum = dot(cx[working_set.active[1:working_set.t]], cx[working_set.active[1:working_set.t]])
     first_iter.t = working_set.t
     previous_iter = copy(first_iter)
-    J2 = (J*Q1)[:, first_iter.rankA+1:end]
-    nrm_b1 = norm(first_iter.b_gn[1:first_iter.dimA])
-    nrm_d1 = norm(first_iter.d_gn[1:first_iter.dimJ2])
-    nrm_d = norm(first_iter.d_gn)
 
     # Analys of the lastly computed search direction
-    error_code = search_direction_analys(previous_iter, first_iter, nb_iteration, x0, c, r, rx, cx, active_C.cx, first_iter.λ, rx_sum, active_cx_sum, p_gn, first_iter.d_gn, first_iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, working_set, first_iter.rankA, first_iter.rankJ2, F_A, F_L11, F_J2, first_iter.add, first_iter.del, active_C.scaling, active_C.diag_scale)
+    error_code = search_direction_analys(previous_iter, first_iter, nb_iteration, x0, c, r, rx, cx, active_C, active_cx_sum, p_gn, J, working_set, F_A, F_L11, F_J2)
  
     # Computation of penalty constants and steplentgh
-    α, w, Ψ_error = compute_steplength(first_iter, x0, r, rx, J, first_iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, first_iter.dimA, m, first_iter.index_del, previous_iter.α, previous_iter.rankJ2, first_iter.rankJ2, first_iter.code, weight_code)
+    α, w, Ψ_error = compute_steplength(first_iter, previous_iter, x0, r, rx, J, c, cx, A, active_C, working_set, K, weight_code)
+
     first_iter.α = α
     first_iter.w = w
     x = x0 + α * first_iter.p
@@ -3174,7 +3172,8 @@ function enlsip(x0::Vector{Float64},
     # Check for termination criterias at new point
     evaluation_restart!(first_iter, error_code)
 
-    sigmin, λ_abs_max = minmax_lagrangian_mult(first_iter.λ, working_set.q, working_set.t, active_C.scaling, active_C.diag_scale)
+    sigmin, λ_abs_max = minmax_lagrangian_mult(first_iter.λ,  working_set, active_C)
+
     exit_code = check_termination_criteria(first_iter, previous_iter, working_set, active_C, x, cx, rx_sum,
         ∇fx, MAX_ITER, nb_iteration, ε_abs, ε_rel, ε_x, ε_c, error_code, sigmin, λ_abs_max, Ψ_error)
 
@@ -3210,18 +3209,15 @@ function enlsip(x0::Vector{Float64},
         # Estimation of the Lagrange multipliers
         # Computation of the Gauss-Newton search direction
         evaluate_scaling!(active_C)
-        P1, L11, Q1, F_A, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter, ε_rank)
+        F_A, F_L11, F_J2 = update_working_set(working_set, rx, A, active_C, ∇fx, J, p_gn, iter, ε_rank)
         active_cx_sum = dot(cx[working_set.active[1:working_set.t]], cx[working_set.active[1:working_set.t]])
         iter.t = working_set.t
-        J2 = (J*Q1)[:, iter.rankA+1:end]
-        nrm_b1 = norm(iter.b_gn[1:iter.dimA])
-        nrm_d1 = norm(iter.d_gn[1:iter.dimJ2])
-        nrm_d = norm(iter.d_gn)
+        
 
         # Analys of the lastly computed search direction
-        error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C.cx, iter.λ, rx_sum, active_cx_sum, p_gn, iter.d_gn, iter.b_gn, nrm_b1, nrm_d1, nrm_d, J, working_set, iter.rankA, iter.rankJ2, F_A, F_L11, F_J2, iter.add, iter.del, active_C.scaling, active_C.diag_scale, iter.restart)
+        error_code = search_direction_analys(previous_iter, iter, nb_iteration, x, c, r, rx, cx, active_C, active_cx_sum, p_gn, J, working_set,F_A, F_L11, F_J2)
         # Computation of penalty constants and steplentgh
-        α, w, Ψ_error = compute_steplength(iter, x, r, rx, J, iter.p, c, cx, A, active_C, previous_iter.w, working_set, K, iter.dimA, m, iter.index_del, previous_iter.α, previous_iter.rankJ2, iter.rankJ2, iter.code, weight_code)
+        α, w, Ψ_error = compute_steplength(iter, previous_iter, x, r, rx, J, c, cx, A, active_C, working_set, K, weight_code)
         iter.α = α
         iter.w = w
         x = x + α * iter.p
@@ -3240,11 +3236,11 @@ function enlsip(x0::Vector{Float64},
         # Check for termination criterias at new point
         evaluation_restart!(iter, error_code)
 
-        sigmin, λ_abs_max = minmax_lagrangian_mult(iter.λ, working_set.q, working_set.t, active_C.scaling, active_C.diag_scale)
+        sigmin, λ_abs_max = minmax_lagrangian_mult(iter.λ, working_set, active_C)
+
         exit_code = check_termination_criteria(iter, previous_iter, working_set, active_C, iter.x, cx, rx_sum, ∇fx, MAX_ITER, nb_iteration,
             ε_abs, ε_rel, ε_x, ε_c, error_code, sigmin, λ_abs_max, Ψ_error)
 
-        # Print collected informations about current iteration
         # Another step is required
         if (exit_code == 0)
             # Print collected informations about current iteration
@@ -3263,9 +3259,9 @@ function enlsip(x0::Vector{Float64},
             iter.x = x
             iter.rx = rx
             iter.cx = cx
-            f_opt = dot(rx, rx)
             iter.del = false
             iter.add = false
+            f_opt = dot(rx, rx)
 
             
 
@@ -3277,7 +3273,7 @@ function enlsip(x0::Vector{Float64},
         end
     end
 
-    # Close the IO Stream and print some collected informations
+    # Close the IO Stream and print collected informations into an output file
     close(io)
     verbose && (s -> println(s)).(readlines(output_file))
 
