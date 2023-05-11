@@ -1468,7 +1468,7 @@ function choose_subspace_dimensions(
         d = -rx
 
     elseif rankA > 0
-        previous_dimA = abs(previous_iter.dimA) + t - previous_iter.t
+        previous_dimA = abs(previous_iter.rankA) + t - previous_iter.t
         nrm_b_asprev = norm(b[1:previous_dimA])
         nrm_b = norm(b)
         constraint_progress = dot(previous_iter.cx, previous_iter.cx) - active_cx_sum
@@ -1489,7 +1489,7 @@ function choose_subspace_dimensions(
         d = F_J2.Q' * d
     end
 
-    previous_dimJ2 = abs(previous_iter.dimJ2) + previous_iter.t - t
+    previous_dimJ2 = abs(previous_iter.rankJ2) + previous_iter.t - t
     nrm_d_asprev = norm(d[1:previous_dimJ2])
     nrm_d = norm(d)
     residual_progress = dot(previous_iter.rx, previous_iter.rx) - rx_sum
