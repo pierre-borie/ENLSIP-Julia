@@ -146,7 +146,7 @@ function euclidean_norm_weight_update(
     K::Array{Array{Float64,1},1})
 
     # if no active constraints, previous penalty weights are used
-    w = previous_w[:]
+    w = previous_w
     if t != 0
 
         # Compute z = [<∇c_i(x),p>^2]_i for i ∈ active

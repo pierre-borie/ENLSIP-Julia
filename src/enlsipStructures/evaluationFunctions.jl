@@ -51,3 +51,26 @@ mutable struct ConstraintsEval <: EvalFunc
 end
 
 ConstraintsEval() = ConstraintsEval(0)
+
+### Tests structures alternatives
+
+#= Idée : faire une structure dont les attributs sont les focntions d'évaluation
+Définir deux fonctions prenant en argument la structure et qui appellent la fonction attribut correspondante (évaluation de la fonction ou calcul de la jacobienne) =# 
+mutable struct EvaluationFunction{T} <: EvalFunc where T <: Function
+    eval::T
+    jac_eval::T
+    ctrl::Int64
+    nb_eval::Int64
+    nb_jac_eval::Int64
+end
+
+function r(residuals::EvaluationFunction, x::Vector)
+    residuals.nb_eval += 1
+    return residuals.eval(x)
+end
+
+function jac_r(residuals::EvaluationFunction, x::Vector)
+    residuals.nb_jac_eval += 1
+    return residuals.jac_eval(x)
+end
+# réflechir comment gérer la jacobienne mieux ?
