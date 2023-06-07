@@ -579,7 +579,7 @@ function first_lagrange_mult_estimate!(
     y = zeros(t)
     #                -1
     # Compute y =(L11) * b
-    y[1:prankA] = LowerTriangular(transpose(F.R)[1:prankA, 1:prankA]) \ b[1:prankA]
+    y[1:prankA] = LowerTriangular((F.R')[1:prankA, 1:prankA]) \ b[1:prankA]
     #              -1
     # Compute u = R  * y
     u = zeros(t)
@@ -823,9 +823,8 @@ function update_working_set(
         vect_P1 = F_A.p[:]
         
         F_A = qr((C.A)',Val(true))
-        L11, P1 = Matrix(F_A.R'), F_A.P
-        rankA = pseudo_rank(diag(L11), ε_rank)
-        F_L11 = qr(L11, Val(true))
+        rankA = pseudo_rank(diag(F_A.R), ε_rank)
+        F_L11 = qr(F_A.R', Val(true))
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
 
         # Test for feasible direction
@@ -841,9 +840,9 @@ function update_working_set(
             iter_k.index_del = 0
             iter_k.del = false
             C.A = (C.scaling ? A[W.active[1:W.t], :] .* C.diag_scale : A[W.active[1:W.t], :])
-            L11, P1 = Matrix(transpose(F_A.R)), F_A.P
-            rankA = pseudo_rank(diag(L11), ε_rank)
-            F_L11 = qr(L11, Val(true))
+            F_A = qr((C.A)',Val(true))
+            rankA = pseudo_rank(diag(F_A.R), ε_rank)
+            F_L11 = qr(F_A.R', Val(true))
             p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
 
             if !(W.t != rankA || iter_k.rankJ2 != min(m, n - rankA))
@@ -860,18 +859,17 @@ function update_working_set(
                     C.A = C.A[setdiff(1:end, s2), :]
                     vect_P1 = F_A.p[:]
                     F_A = qr((C.A)',Val(true))
-                    L11, P1 = Matrix(F_A.R'), F_A.P
-                    rankA = pseudo_rank(diag(L11), ε_rank)
-                    F_L11 = qr(L11, Val(true))
+                    
+                    rankA = pseudo_rank(diag(F_A.R), ε_rank)
+                    F_L11 = qr(F_A.R', Val(true))
                     p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
                 end
             end
         end
         # No first order estimate implies deletion of a constraint
     elseif s == 0
-        L11, P1 = Matrix(F_A.R'), F_A.P
-        rankA = pseudo_rank(diag(L11), ε_rank)
-        F_L11 = qr(L11, Val(true))
+        rankA = pseudo_rank(diag(F_A.R), ε_rank)
+        F_L11 = qr(F_A.R', Val(true))
 
         p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
 
@@ -888,11 +886,9 @@ function update_working_set(
                 iter_k.index_del = index_s2
                 vect_P1 = F_A.p[:]
                 C.A = C.A[setdiff(1:end, s2), :]
-
                 F_A = qr((C.A)',Val(true))
-                L11, P1 = Matrix(F_A.R'), F_A.P
-                rankA = pseudo_rank(diag(L11), ε_rank)
-                F_L11 = qr(L11, Val(true))
+                rankA = pseudo_rank(diag(F_A.R), ε_rank)
+                F_L11 = qr(F_A.R', Val(true))
                 p_gn[:], F_J2 = gn_search_direction(J, rx, C.cx, F_A, F_L11, rankA, W.t, ε_rank, iter_k)
             end
         end
