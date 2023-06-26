@@ -1,11 +1,8 @@
-
-
 using LinearAlgebra, Polynomials, Printf, Polynomials
 using Formatting, DataFrames, CSV
 
 
 include("structures.jl")
-include("steplength.jl")
 
 
 
@@ -139,6 +136,27 @@ function new_point!(x::Vector{Float64},
     end
     return
 end
+
+function new_point!(
+    x::Vector,
+    r::ResidualsFunction,
+    c::ConstraintsFunction,
+    rx::Vector,
+    cx::Vector,
+    J::Matrix,
+    A::Matrix)
+
+    # Evaluate residuals and associated jacobian matrix
+    reseval!(r,x,rx)
+    jacres_eval!(r,x,J)
+
+    # Evaluate constraints and associated jacobian matrix
+    conseval!(c,x,cx)
+    jaccons_eval!(c,x,A)
+
+    return
+end
+
 
 """
     sub_search_direction(J1,rx,cx,Q1,L11,P1,F_L11,F_J2,n,t,rankA,dimA,dimJ2,code)

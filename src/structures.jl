@@ -53,21 +53,21 @@ Summarizes the useful informations about an iteration of the algorithm
 * `nb_newton_steps` : number of search direction computed using the method of Newton
 """
 mutable struct Iteration
-    x::Vector{Float64}
-    p::Vector{Float64}
-    rx::Vector{Float64}
-    cx::Vector{Float64}
+    x::Vector
+    p::Vector
+    rx::Vector
+    cx::Vector
     t::Int64
     α::Float64
     index_α_upp::Int64
-    λ::Vector{Float64}
-    w::Vector{Float64}
+    λ::Vector
+    w::Vector
     rankA::Int64
     rankJ2::Int64
     dimA::Int64
     dimJ2::Int64
-    b_gn::Vector{Float64}
-    d_gn::Vector{Float64}
+    b_gn::Vector
+    d_gn::Vector
     predicted_reduction::Float64
     progress::Float64
     grad_res::Float64
@@ -141,34 +141,7 @@ end
 
 ConstraintsEval() = ConstraintsEval(0)
 
-### Tests structures alternatives
 
-#= Idée : faire une structure dont les attributs sont les focntions d'évaluation =# 
-mutable struct EvaluationFunction{T1,T2} <: EvalFunc where  {T1 <: Function, T2 <: Function}
-    eval::T1
-    jac_eval::T2
-    nb_eval::Int64
-    nb_jac_eval::Int64
-end
-
-function func_eval!(h::EvaluationFunction, x::Vector, hx::Vector, Jhx::Matrix, ctrl::Int64)
-    
-    #= ctrl = 1
-    Evaluates the function h at point x 
-    Result stored in place in vector hx =#
-    if abs(ctrl) == 1
-        hx[:] = h.eval(x)
-        h.nb_eval += 1
-
-    #= ctrl = 2
-    Computes jacobian matrix of h at point x 
-    Result stored in place in matrix Jhx =#
-    elseif ctrl == 2
-        Jhx[:] = h.jac_eval(x)
-        h.nb_jac_eval += 1
-    end
-    return ctrl
-end
 
 """
     Constraint
@@ -195,6 +168,59 @@ mutable struct Constraint
     diag_scale::Vector{Float64}
 end
 
+#= Structures where the first two fields are the functions evaluating residuals or constraints and the associated jacobian matrix
+=#
+
+abstract type EvaluationFunction end
+
+
+mutable struct ResidualsFunction{T1,T2} <: EvaluationFunction where {T1 <: Function,T2 <: Function}
+    reseval::T1
+    jacres_eval::T2
+    nb_reseval::Int64
+    nb_jacres_eval::Int64
+end
+
+function ResidualsFunction(eval, jac_eval)
+    ResidualsFunction{typeof(eval),typeof(jac_eval)}(eval, jac_eval, 0, 0)
+end
+
+mutable struct ConstraintsFunction{T1,T2} <: EvaluationFunction  where {T1 <: Function, T2 <: Function}
+    conseval::T1
+    jaccons_eval::T2
+    nb_conseval::Int64
+    nb_jaccons_eval::Int64
+end
+
+function ConstraintsFunction(eval, jac_eval)
+    ConstraintsFunctions{typeof(eval), typeof(jac_eval)}(eval, jac_eval, 0, 0)
+end
+
+#= Functions to compute in place the residuals, constraints and jacobian matrices of a given EvaluationFunction =#
+
+function res_eval!(r::ResidualsFunction, x::Vector, rx::Vector)
+    rx[:] = r.reseval(x)
+    r.nb_reseval += 1
+    return
+end
+
+function jacres_eval!(r::ResidualsFunction, x::Vector, J::Matrix)
+    J[:] = r.jacres_eval(x)
+    r.nb_jacres_eval += 1
+    return
+end
+
+function cons_eval!(c::ConstraintsFunction, x::Vector, cx::Vector)
+    cx[:] = c.conseval(x)
+    c.nb_conseval += 1
+    return
+end
+
+function jaccons_eval!(c::ConstraintsFunction, x::Vector, A::Matrix)
+    A[:] = c.jaccons_eval(x)
+    c.nb_jaccons_eval += 1
+    return
+end
 
 # EVSCAL 
 # Scale jacobian matrix of active constraints A and active constraints evaluation vector cx if so indicated (ie if scale different from 0) by forming vectors :
@@ -205,13 +231,13 @@ end
 function evaluate_scaling!(C::Constraint)
 
     t = size(C.A, 1)
-    ε_float = eps(Float64)
+    ε_rel = eps(eltype(C.cx))
     C.diag_scale = zeros(t)
     for i = 1:t
         row_i = norm(C.A[i, :])
         C.diag_scale[i] = row_i
         if C.scaling
-            if abs(row_i) < ε_float
+            if abs(row_i) < ε_rel
                 row_i = 1.0
             end
             C.A[i, :] /= row_i
