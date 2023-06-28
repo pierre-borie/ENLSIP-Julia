@@ -147,11 +147,11 @@ function new_point!(
     A::Matrix)
 
     # Evaluate residuals and associated jacobian matrix
-    reseval!(r,x,rx)
+    res_eval!(r,x,rx)
     jacres_eval!(r,x,J)
 
     # Evaluate constraints and associated jacobian matrix
-    conseval!(c,x,cx)
+    cons_eval!(c,x,cx)
     jaccons_eval!(c,x,A)
 
     return
@@ -1725,7 +1725,7 @@ function psi(
     # Second part of sum with inactive constraints
     for i = 1:l-t
         j = inactive[i]
-        if c_new[j] < 0.0
+        if cx_new[j] < 0.0
             penalty_constraint_sum += w[j] * cx_new[j]^2
         end
     end
@@ -2377,11 +2377,6 @@ function linesearch_constrained(
     l, t = work_set.l, work_set.t
     active, inactive = work_set.active, work_set.inactive
 
-    # Only evalutations for residuals and constraints
-    r.ctrl = 1
-    c.ctrl = 1
-    dummy = zeros((1, 1))
-
     # LINC1
     # Set values of constants and compute α_min, α_max and α_k
 
@@ -2982,8 +2977,7 @@ function compute_steplength(
 
             # Computation of new point and actual progress
             # Evaluate residuals and constraints at the new point
-            r.ctrl = 1
-            c.ctrl = 1
+        
             rx_new = zeros(m)
             cx_new = zeros(work_set.l)
             x_new = x + α * p
@@ -3509,7 +3503,7 @@ The following arguments are optionnal and have default values:
 
 
 
-function enlsip(x0::Vector{Float64},
+function enlsip_solve(x0::Vector{Float64},
     r::ResidualsEval, c::ConstraintsEval,
     n::Int64, m::Int64, q::Int64, l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
@@ -3733,7 +3727,7 @@ function enlsip(x0::Vector{Float64},
     return EnslipSolution(exit_code, x_opt, f_opt)
 end
 
-function enlsip(x0::Vector{Float64},
+function enlsip_solve(x0::Vector{Float64},
     r::ResidualsFunction, c::ConstraintsFunction,
     n::Int64, m::Int64, q::Int64, l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
@@ -3785,7 +3779,7 @@ function enlsip(x0::Vector{Float64},
     # Evaluate residuals, constraints and jacobian matrices at starting point
     rx, cx = zeros(m), zeros(l)
     J, A = zeros(m, n), zeros(l, n)
-    new_point!(x0, r, rx, c, cx, J, A, n, m, l)
+    new_point!(x0, r, c, rx, cx, J, A)
     # First Iteration
     x_opt = x0
     f_opt = dot(rx, rx)
@@ -3827,7 +3821,7 @@ function enlsip(x0::Vector{Float64},
 
     # Evaluate residuals, constraints and compute jacobians at new point
 
-    new_point!(x, r, rx, c, cx, J, A, n, m, l)
+    new_point!(x, r, c, rx, cx, J, A)
     ∇fx = transpose(J) * rx
     rx_sum = dot(rx, rx)
 
@@ -3885,7 +3879,7 @@ function enlsip(x0::Vector{Float64},
         x = x + α * iter.p
 
         # Evaluate residuals, constraints and compute jacobians at new point
-        new_point!(x, r, rx, c, cx, J, A, n, m, l)
+        new_point!(x, r, c, rx, cx, J, A)
         rx_sum = dot(rx, rx)        
         ∇fx = transpose(J) * rx
 

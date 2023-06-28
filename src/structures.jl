@@ -173,27 +173,27 @@ end
 
 abstract type EvaluationFunction end
 
-
-mutable struct ResidualsFunction{T1,T2} <: EvaluationFunction where {T1 <: Function,T2 <: Function}
-    reseval::T1
-    jacres_eval::T2
+mutable struct ResidualsFunction <: EvaluationFunction 
+    reseval
+    jacres_eval
     nb_reseval::Int64
     nb_jacres_eval::Int64
 end
 
+
 function ResidualsFunction(eval, jac_eval)
-    ResidualsFunction{typeof(eval),typeof(jac_eval)}(eval, jac_eval, 0, 0)
+    ResidualsFunction(eval, jac_eval, 0, 0)
 end
 
-mutable struct ConstraintsFunction{T1,T2} <: EvaluationFunction  where {T1 <: Function, T2 <: Function}
-    conseval::T1
-    jaccons_eval::T2
+mutable struct ConstraintsFunction <: EvaluationFunction 
+    conseval
+    jaccons_eval
     nb_conseval::Int64
     nb_jaccons_eval::Int64
 end
 
 function ConstraintsFunction(eval, jac_eval)
-    ConstraintsFunctions{typeof(eval), typeof(jac_eval)}(eval, jac_eval, 0, 0)
+    ConstraintsFunction(eval, jac_eval, 0, 0)
 end
 
 #= Functions to compute in place the residuals, constraints and jacobian matrices of a given EvaluationFunction =#
