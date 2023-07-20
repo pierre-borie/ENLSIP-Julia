@@ -3303,9 +3303,9 @@ function output_iter_for_comparison(
         to_string_e(cx_sum), to_string_e(iter.grad_res), to_string_e(norm(iter.p)),
         iter.dimA, iter.dimJ2, to_string_e(iter.α), to_string_e(speed), to_string_e(maximum(iter.w)),
         to_string_e(iter.predicted_reduction), to_string_e(iter.progress))
-    print_tabulated_format(io, filter((n -> n > 0), W.active), formater=(n -> @sprintf("%4d", n)),
+    #=print_tabulated_format(io, filter((n -> n > 0), W.active), formater=(n -> @sprintf("%4d", n)),
         header="       ", line_prefix="       ", separator="",
-        trailer="", nb_columns=50, characters_per_line=500)
+        trailer="", nb_columns=50, characters_per_line=500)=#
 end
 
 function final_output_for_comparison(
@@ -3727,7 +3727,7 @@ function enlsip_solve(x0::Vector{Float64},
     return EnslipSolution(exit_code, x_opt, f_opt)
 end
 
-function enlsip_solve(x0::Vector{Float64},
+function enlsip(x0::Vector{Float64},
     r::ResidualsFunction, c::ConstraintsFunction,
     n::Int64, m::Int64, q::Int64, l::Int64;
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
@@ -3736,12 +3736,12 @@ function enlsip_solve(x0::Vector{Float64},
 
     function output_header(io)
         println(io, "")
-        println(io, "****************************************")
-        println(io, "*                                      *")
+        println(io, "*"^40)
+        println(io, "*"," "^38,"*")
 
         println(io, "*          ENLSIP-JULIA-0.4.0          *")
         println(io, "*                                      *")
-        println(io, "****************************************\n")
+        println(io, "*"^40)
         println(io, "Starting point : $x0\n")
         print_tabulated_format(io, x0, formater=(t -> @sprintf(" %e ", t)),
             header="Starting point :\n   ", line_prefix="   ", separator=" ",
@@ -3753,15 +3753,20 @@ function enlsip_solve(x0::Vector{Float64},
     end
     
     function output_header_for_comparison(io)
-        print(io, "ENLSIP-JULIA-0.4.0\n\n")
-        print_tabulated_format(io, x0, formater=(x -> mimic_fortran_e_format(x, 8)),
-            header="Starting point :\n   ", line_prefix="   ", separator=" ",
-            trailer="\n", nb_columns=6)
+        println(io, '*'^40)
+        println(io, "*",' '^38,"*")
+
+        println(io, "*          ENLSIP-JULIA-0.4.0          *")
+        println(io, "*                                      *")
+        println(io, '*'^40)
+
+        println(io, "\n\nNumber of parameters             : ", @sprintf("%5i", n))
+        println(io, "Number of residuals              : ", @sprintf("%5i", m))
         println(io, "Number of equality constraints   : ", @sprintf("%5i", q))
         println(io, "Number of inequality constraints : ", @sprintf("%5i", (l - q)))
         println(io, "Constraints internal scaling     : $scaling\n")
         println(io, "\nIteration steps information\n")
-        println(io, "iter     objective       cx_sum      grad_res      ||p||    dimA dimJ2   alpha     conv. speed   max weight   predicted    reduction    (working set : following lines)")
+        println(io, "iter     objective       cx_sum      grad_res      ||p||    dimA dimJ2   alpha     conv. speed   max weight   predicted    reduction")
     end
     
 
