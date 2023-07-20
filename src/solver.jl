@@ -1,11 +1,4 @@
-using LinearAlgebra, Polynomials, Printf, Polynomials
-using Formatting, DataFrames, CSV
-
-include("structures.jl")
-include("enlsip_functions.jl")
-
 export solve
-
 
 """
     solve(model::EnlsipModel)

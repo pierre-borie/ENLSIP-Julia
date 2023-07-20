@@ -1,6 +1,3 @@
-# using LinearAlgebra, Polynomials, Printf, Polynomials
-# using Formatting, DataFrames, CSV
-
 
 # EVSCAL 
 # Scale jacobian matrix of active constraints A and active constraints evaluation vector cx if so indicated (ie if scale different from 0) by forming vectors :
@@ -3729,24 +3726,6 @@ function enlsip(x0::Vector{Float64},
     scaling::Bool=false, weight_code::Int64=2, MAX_ITER::Int64=100,
     ε_abs=1e-10, ε_rel=1e-5, ε_x=1e-3, ε_c=1e-4, ε_rank::Float64=1e-10,
     verbose::Bool=false,output_file::String="enlsip.out")
-
-    function output_header(io)
-        println(io, "")
-        println(io, "*"^40)
-        println(io, "*"," "^38,"*")
-
-        println(io, "*          ENLSIP-JULIA-0.4.0          *")
-        println(io, "*                                      *")
-        println(io, "*"^40)
-        println(io, "Starting point : $x0\n")
-        print_tabulated_format(io, x0, formater=(t -> @sprintf(" %e ", t)),
-            header="Starting point :\n   ", line_prefix="   ", separator=" ",
-            trailer="\n", nb_columns=10)
-        println(io, "Number of equality constraints   : $q\nNumber of inequality constraints : $(l-q)")
-        println(io, "Constraints internal scaling     : $scaling\n")
-        println(io, "\nIteration steps information\n")
-        println(io, "iter     objective    cx_sum   reduction     ||p||   dimA  dimJ2     α     conv. speed   max weight   working set")
-    end
     
     function output_header_for_comparison(io)
         println(io, '*'^40)
@@ -3927,6 +3906,6 @@ function enlsip(x0::Vector{Float64},
     # Close the IO Stream and print collected informations into an output file
     close(io)
     verbose && (s -> println(s)).(readlines(output_file))
-
+    rm(output_file)
     return EnslipSolution(exit_code, x_opt, f_opt)
 end
