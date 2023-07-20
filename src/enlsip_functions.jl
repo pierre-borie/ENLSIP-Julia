@@ -1,9 +1,5 @@
-using LinearAlgebra, Polynomials, Printf, Polynomials
-using Formatting, DataFrames, CSV
-
-
-include("structures.jl")
-
+# using LinearAlgebra, Polynomials, Printf, Polynomials
+# using Formatting, DataFrames, CSV
 
 
 # EVSCAL 

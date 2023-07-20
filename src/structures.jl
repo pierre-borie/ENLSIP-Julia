@@ -1,3 +1,5 @@
+export AbstractEnlsipModel, EnlsipModel
+
 """
 
     Iteration
@@ -353,7 +355,8 @@ function add_constraint!(W::WorkingSet, s::Int64)
     return
 end
 
-struct EnlsipModel
+abstract type AbstractEnlsipModel end
+struct EnlsipModel <: AbstractEnlsipModel
     residuals::ResidualsFunction
     constraints::ConstraintsFunction
     x0::Vector
@@ -375,59 +378,59 @@ function EnlsipModel(
     ineq_constraints=nothing,
     jacobian_ineqcons=nothing,
     nb_ineqcons::Int64=0,
-    lbounds::Vector=fill!(Vector{Float64}(undef,nb_parameters), -Inf),
-    ubounds::Vector=fill!(Vector{Float64}(undef,nb_parameters), Inf))
+    x_low::Vector=fill!(Vector{Float64}(undef,nb_parameters), -Inf),
+    x_upp::Vector=fill!(Vector{Float64}(undef,nb_parameters), Inf))
     
 
     @assert(typeof(residuals) <: Function, "The argument res_func must be a function")
     @assert(nb_parameters > 0 && nb_residuals > 0, "The number of parameters and number of residuals must be strictly positive")
-    @assert(eq_constraints !== nothing || ineq_constraints !== nothing || any(isfinite,lbounds) || any(isfinite,ubounds), "There must be at least one constraint")
+    @assert(eq_constraints !== nothing || ineq_constraints !== nothing || any(isfinite,x_low) || any(isfinite,x_upp), "There must be at least one constraint")
 
     
 
     residuals_evalfunc = (jacobian_residuals === nothing ? ResidualsFunction(residuals) : ResidualsFunction(residuals, jacobian_residuals))
 
-    if all(!isfinite,vcat(lbounds,ubounds))
+    if all(!isfinite,vcat(x_low,x_upp))
         constraints_evalfunc = instantiate_constraints_wo_bounds(eq_constraints, jacobian_eqcons, ineq_constraints, jacobian_ineqcons)
     else
-        constraints_evalfunc = instantiate_constraints_w_bounds(eq_constraints, jacobian_eqcons, ineq_constraints, jacobian_ineqcons, lbounds, ubounds)
+        constraints_evalfunc = instantiate_constraints_w_bounds(eq_constraints, jacobian_eqcons, ineq_constraints, jacobian_ineqcons, x_low, x_upp)
     end
 
-    nb_constraints = nb_eqcons + nb_ineqcons + count(isfinite, lbounds) + count(isfinite,ubounds)
+    nb_constraints = nb_eqcons + nb_ineqcons + count(isfinite, x_low) + count(isfinite,x_upp)
 
     return EnlsipModel(residuals_evalfunc, constraints_evalfunc, starting_point, nb_parameters, nb_residuals, nb_eqcons, nb_constraints)
 end
 
-function box_constraints(lbounds::Vector, ubounds::Vector)
+function box_constraints(x_low::Vector, x_upp::Vector)
 
-    n = size(lbounds,1)
-    @assert(n == size(ubounds,1),"Bounds vectors must have same length")
+    n = size(x_low,1)
+    @assert(n == size(x_upp,1),"Bounds vectors must have same length")
 
-    no_lbounds = all(!isfinite,lbounds)
-    no_ubounds = all(!isfinite,ubounds)
+    no_x_low = all(!isfinite,x_low)
+    no_x_upp = all(!isfinite,x_upp)
 
-    @assert(!(no_lbounds && no_ubounds), "Bounds vectors are assumed to contain at least one finite element")
+    @assert(!(no_x_low && no_x_upp), "Bounds vectors are assumed to contain at least one finite element")
 
-    if no_lbounds && !no_ubounds
-        cons_w_ubounds(x::Vector) = filter(isfinite,ubounds-x)
-        jaccons_w_ubounds(x::Vector) = Matrix{eltype(ubounds)}(-I,n,n)[filter(i-> isfinite(ubounds[i]),1:n),:]
+    if no_x_low && !no_x_upp
+        cons_w_ubounds(x::Vector) = filter(isfinite,x_upp-x)
+        jaccons_w_ubounds(x::Vector) = Matrix{eltype(x_upp)}(-I,n,n)[filter(i-> isfinite(x_upp[i]),1:n),:]
         return cons_w_ubounds, jaccons_w_ubounds
     
-    elseif !no_lbounds && no_ubounds
-        cons_w_lbounds(x::Vector) = filter(isfinite, x-lbounds)
-        jaccons_w_lbounds(x::Vector) = Matrix{eltype(lbounds)}(I,n,n)[filter(i-> isfinite(lbounds[i]),1:n),:]
+    elseif !no_x_low && no_x_upp
+        cons_w_lbounds(x::Vector) = filter(isfinite, x-x_low)
+        jaccons_w_lbounds(x::Vector) = Matrix{eltype(x_low)}(I,n,n)[filter(i-> isfinite(x_low[i]),1:n),:]
         return cons_w_lbounds, jaccons_w_lbounds
     
     else
-        cons_w_bounds(x::Vector) = vcat(filter(isfinite, x-lbounds), filter(isfinite, ubounds-x))
-        jaccons_w_bounds(x::Vector) = vcat(Matrix{eltype(lbounds)}(I,n,n)[filter(i-> isfinite(lbounds[i]),1:n),:], Matrix{eltype(ubounds)}(-I,n,n)[filter(i-> isfinite(ubounds[i]),1:n),:])
+        cons_w_bounds(x::Vector) = vcat(filter(isfinite, x-x_low), filter(isfinite, x_upp-x))
+        jaccons_w_bounds(x::Vector) = vcat(Matrix{eltype(x_low)}(I,n,n)[filter(i-> isfinite(x_low[i]),1:n),:], Matrix{eltype(x_upp)}(-I,n,n)[filter(i-> isfinite(x_upp[i]),1:n),:])
         return cons_w_bounds, jaccons_w_bounds
     end
 end
 
-function instantiate_constraints_w_bounds(eq_constraints, jacobian_eqcons, ineq_constraints, jacobian_ineqcons, lbounds, ubounds)
+function instantiate_constraints_w_bounds(eq_constraints, jacobian_eqcons, ineq_constraints, jacobian_ineqcons, x_low, x_upp)
 
-    bounds_func, jac_bounds_func = box_constraints(lbounds, ubounds)
+    bounds_func, jac_bounds_func = box_constraints(x_low, x_upp)
 
     if eq_constraints !== nothing && ineq_constraints !== nothing
         cons(x::Vector) = vcat(eq_constraints(x), ineq_constraints(x), bounds_func(x))
